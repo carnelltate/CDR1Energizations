@@ -108,9 +108,18 @@ async function loadDefaultData() {
             if (!available.includes(state.activeBuilding)) {
                 state.activeBuilding = available[0];
             }
+            // Update tab UI to match active building
+            dom.buildingTabs.forEach(tab => {
+                tab.classList.toggle(
+                    "active",
+                    tab.dataset.building === state.activeBuilding
+                );
+            });
             loadBuildingData(state.activeBuilding);
         } else {
-            // Legacy single-building format
+            // Legacy single-building format — treat as DC3 data
+            state.rawData = null;
+            state.activeBuilding = "DC1";
             loadDataIntoState(data);
         }
 
@@ -125,11 +134,20 @@ async function loadDefaultData() {
 }
 
 function loadBuildingData(buildingKey) {
-    if (!state.rawData || !state.rawData.buildings) return;
+    if (!state.rawData || !state.rawData.buildings) {
+        // Legacy single-building format — tabs other than the active one
+        // can't switch until a combined multi-building JSON is uploaded.
+        if (buildingKey !== state.activeBuilding) {
+            showError(
+                `${buildingKey} data is not available. Run the Python export script to generate a combined JSON with all three buildings, then upload it.`
+            );
+        }
+        return;
+    }
 
     const buildingData = state.rawData.buildings[buildingKey];
     if (!buildingData) {
-        showError(`No data found for ${buildingKey}.`);
+        showError(`No data found for ${buildingKey} in the current JSON file.`);
         return;
     }
 
