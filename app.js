@@ -9,7 +9,7 @@ console.log("APP JS LOADED");
 // Update GITHUB_OWNER / GITHUB_REPO if you fork or rename the repo.
 // =========================================
 const GITHUB_OWNER    = "carnelltate";
-const GITHUB_REPO     = "CDR1_energizations";
+const GITHUB_REPO     = "CDR1Energizations";
 const GITHUB_BRANCH   = "main";
 const GITHUB_FILE_PATH = "equipment_data.json";
 const GITHUB_RAW_URL  =
@@ -363,7 +363,9 @@ async function handleJsonUpload(event) {
             return;
         }
 
-        if (!data.metadata || typeof data.metadata !== "object") {
+        // For combined multi-building format, metadata lives inside each building — no root-level metadata required.
+        // For legacy single-building format, root-level metadata is expected.
+        if (!data.buildings && (!data.metadata || typeof data.metadata !== "object")) {
             showError("Invalid file: missing metadata object.");
             return;
         }
