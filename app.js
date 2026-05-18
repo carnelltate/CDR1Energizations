@@ -8,28 +8,6 @@ console.log("APP JS LOADED");
 // GITHUB PAGES DATA CONFIG
 // Update GITHUB_OWNER / GITHUB_REPO if you fork or rename the repo.
 // =========================================
-const PASSWORD = "DC3_@lw@ys_En3rgiz3s";
-
-const entered =
-    prompt("Enter password");
-
-if (entered !== PASSWORD) {
-
-    document.body.innerHTML = `
-        <div style="
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            height:100vh;
-            font-family:sans-serif;
-            font-size:24px;
-        ">
-            Access Denied
-        </div>
-    `;
-
-    throw new Error("Unauthorized");
-}
 const GITHUB_OWNER    = "carnelltate";
 const GITHUB_REPO     = "CDR1Energizations";
 const GITHUB_BRANCH   = "main";
