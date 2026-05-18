@@ -171,7 +171,9 @@ function loadDataIntoState(data) {
     hideError();
     hideSuccess();
 
-    state.rawData = data;
+    // NOTE: Do NOT overwrite state.rawData here.
+    // state.rawData holds the full multi-building payload needed for tab switching.
+    // It is only set in loadDefaultData() and handleJsonUpload().
 
     state.equipment =
         Array.isArray(data.equipment)
