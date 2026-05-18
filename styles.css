@@ -1,0 +1,823 @@
+/*
+File: /site/styles.css
+Purpose: Styling for DC3 Construction Equipment Search
+*/
+
+
+/* =========================================
+   ROOT VARIABLES
+========================================= */
+
+:root {
+    --bg: #f4f6f8;
+    --panel-bg: #ffffff;
+    --border: #d9dee5;
+
+    --text: #1f2937;
+    --muted-text: #6b7280;
+
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+
+    --success: #d1fae5;
+    --warning: #fef3c7;
+    --muted-cell: #f3f4f6;
+
+    --danger: #fee2e2;
+    --danger-text: #991b1b;
+
+    --shadow:
+        0 1px 2px rgba(0, 0, 0, 0.05),
+        0 3px 6px rgba(0, 0, 0, 0.04);
+
+    --radius: 10px;
+
+    --font:
+        "Segoe UI",
+        Tahoma,
+        Geneva,
+        Verdana,
+        sans-serif;
+}
+
+
+/* =========================================
+   BASE
+========================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+
+    background: var(--bg);
+    color: var(--text);
+
+    font-family: var(--font);
+}
+
+body {
+    min-height: 100vh;
+}
+
+
+/* =========================================
+   UTILITIES
+========================================= */
+
+.hidden {
+    display: none !important;
+}
+
+.sr-only {
+    position: absolute;
+    left: -9999px;
+}
+
+
+/* =========================================
+   APP LAYOUT
+========================================= */
+
+.app-shell {
+    width: 100%;
+    max-width: 100%;
+
+    padding: 24px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+
+/* =========================================
+   PANELS
+========================================= */
+
+.panel {
+    background: var(--panel-bg);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+
+    box-shadow: var(--shadow);
+
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 16px 20px;
+
+    border-bottom: 1px solid var(--border);
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    background: #fafafa;
+}
+
+.panel-header h2 {
+    margin: 0;
+
+    font-size: 18px;
+    font-weight: 600;
+}
+
+
+/* =========================================
+   HEADER
+========================================= */
+
+.app-header {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.header-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.app-title {
+    margin: 0;
+
+    font-size: 30px;
+    font-weight: 700;
+}
+
+.app-subtitle {
+    margin: 8px 0 0;
+
+    color: var(--muted-text);
+
+    font-size: 15px;
+}
+
+/* =========================================
+   BUILDING NAV TABS
+========================================= */
+
+.building-nav {
+    display: flex;
+    gap: 4px;
+    margin-top: 16px;
+}
+
+.building-tab {
+    padding: 8px 24px;
+
+    border: 2px solid var(--border);
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+
+    background: #f3f4f6;
+    color: var(--muted-text);
+
+    font-size: 14px;
+    font-weight: 700;
+
+    cursor: pointer;
+
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.building-tab:hover {
+    background: #e5e7eb;
+    color: var(--text);
+}
+
+.building-tab.active {
+    background: var(--panel-bg);
+    color: var(--primary);
+    border-color: var(--primary);
+    border-bottom: 2px solid var(--panel-bg);
+    margin-bottom: -2px;
+    z-index: 1;
+}
+
+.metadata-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.metadata-item {
+    background: white;
+
+    border: 1px solid var(--border);
+    border-radius: 999px;
+
+    padding: 8px 14px;
+
+    font-size: 14px;
+}
+
+.metadata-label {
+    font-weight: 600;
+}
+
+
+/* =========================================
+   BUTTONS
+========================================= */
+
+button {
+    cursor: pointer;
+
+    border: none;
+    border-radius: 8px;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    transition:
+        background 0.15s ease,
+        transform 0.1s ease;
+}
+
+button:hover {
+    transform: translateY(-1px);
+}
+
+.primary-btn {
+    background: var(--primary);
+    color: white;
+
+    padding: 12px 18px;
+}
+
+.primary-btn:hover {
+    background: var(--primary-hover);
+}
+
+.secondary-btn {
+    background: white;
+    color: var(--text);
+
+    border: 1px solid var(--border);
+
+    padding: 10px 16px;
+}
+
+
+/* =========================================
+   SEARCH
+========================================= */
+
+.search-panel {
+    padding: 20px;
+}
+
+.search-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.search-textarea {
+    width: 100%;
+    resize: vertical;
+
+    min-height: 180px;
+
+    padding: 14px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 14px;
+    font-family: Consolas, monospace;
+
+    line-height: 1.5;
+}
+
+.search-button-row {
+    display: flex;
+    gap: 12px;
+}
+
+.search-help {
+    color: var(--muted-text);
+
+    font-size: 13px;
+}
+
+
+/* =========================================
+   SUMMARY
+========================================= */
+
+.summary-panel {
+    padding: 18px 20px;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.summary-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.summary-card {
+    background: #fafafa;
+
+    border: 1px solid var(--border);
+    border-radius: 10px;
+
+    padding: 12px 16px;
+
+    min-width: 150px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.summary-label {
+    color: var(--muted-text);
+
+    font-size: 13px;
+}
+
+.summary-value {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.summary-actions {
+    display: flex;
+    gap: 12px;
+}
+
+
+/* =========================================
+   FILTERS
+========================================= */
+
+.filter-panel {
+    padding: 20px;
+}
+
+.filter-grid {
+    display: grid;
+
+    grid-template-columns:
+        minmax(220px, 1fr)
+        minmax(180px, 220px)
+        minmax(180px, 220px)
+        auto;
+
+    gap: 16px;
+    align-items: end;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-field label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.filter-field input,
+.filter-field select {
+    height: 42px;
+
+    padding: 0 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 14px;
+
+    background: white;
+}
+
+
+/* =========================================
+   TABLES
+========================================= */
+
+.table-scroll-container {
+    overflow-x: auto;
+    overflow-y: auto;
+
+    max-width: 100%;
+}
+
+.data-table {
+    width: max-content;
+    min-width: 100%;
+
+    border-collapse: collapse;
+
+    table-layout: auto;
+
+    font-size: 13px;
+}
+
+.data-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.data-table th {
+    background: #f9fafb;
+
+    border-bottom: 2px solid var(--border);
+
+    padding: 12px 10px;
+
+    text-align: center;
+    white-space: nowrap;
+
+    font-weight: 700;
+}
+
+.data-table td {
+    border-bottom: 1px solid #eceff3;
+
+    padding: 10px;
+
+    text-align: center;
+    white-space: nowrap;
+}
+
+.data-table tbody tr:hover {
+    background: #fafcff;
+}
+
+
+/* =========================================
+   CHECKLIST CELL STATES
+========================================= */
+
+.status-complete {
+    background: var(--success);
+    font-weight: 700;
+}
+
+.status-incomplete {
+    background: var(--warning);
+    font-weight: 700;
+}
+
+.status-na {
+    background: var(--muted-cell);
+    color: var(--muted-text);
+}
+
+.issue-critical {
+    background: var(--danger);
+    color: var(--danger-text);
+
+    font-weight: 700;
+}
+
+
+/* =========================================
+   ISSUES VIEW
+========================================= */
+
+.issues-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.issue-equipment-group {
+    border-bottom: 1px solid var(--border);
+}
+
+.issue-equipment-header {
+    background: #f8fafc;
+
+    padding: 14px 20px;
+
+    display: grid;
+    grid-template-columns:
+        260px
+        180px
+        180px;
+
+    gap: 16px;
+
+    font-weight: 700;
+}
+
+.issue-section {
+    padding: 10px 20px 18px;
+}
+
+.issue-section-title {
+    margin: 12px 0;
+
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.issue-section-critical {
+    color: #b91c1c;
+}
+
+.issue-section-noncritical {
+    color: #92400e;
+}
+
+.issue-row {
+    display: grid;
+
+    grid-template-columns:
+        220px
+        1fr
+        220px
+        180px
+        100px;
+
+    gap: 14px;
+
+    padding: 10px 0;
+
+    border-bottom: 1px solid #edf1f5;
+
+    font-size: 13px;
+}
+
+.issue-row:last-child {
+    border-bottom: none;
+}
+
+
+/* =========================================
+   STATUS BADGES
+========================================= */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 120px;
+
+    padding: 6px 10px;
+
+    border-radius: 999px;
+
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.status-open {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.status-progress {
+    background: #ffedd5;
+    color: #c2410c;
+}
+
+.status-ready {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.status-complete-badge {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.status-recommendation {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.status-default {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+
+/* =========================================
+   LINKS
+========================================= */
+
+a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+
+/* =========================================
+   NOT FOUND
+========================================= */
+
+.not-found-panel {
+    padding: 20px;
+}
+
+.not-found-description {
+    margin-top: 0;
+
+    color: var(--muted-text);
+}
+
+.not-found-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.not-found-item {
+    background: #fee2e2;
+    color: #991b1b;
+
+    border-radius: 999px;
+
+    padding: 8px 12px;
+
+    font-size: 13px;
+    font-weight: 600;
+}
+
+
+/* =========================================
+   EMPTY STATE
+========================================= */
+
+.empty-panel {
+    padding: 40px 20px;
+}
+
+.empty-state-content {
+    text-align: center;
+}
+
+.empty-state-content h2 {
+    margin-top: 0;
+}
+
+
+/* =========================================
+   ERROR BANNER
+========================================= */
+
+.error-banner {
+    background: #991b1b;
+    color: white;
+
+    border-radius: 10px;
+
+    padding: 16px 20px;
+
+    font-weight: 600;
+}
+
+.success-banner {
+    background: #166534;
+    color: white;
+
+    border-radius: 10px;
+
+    padding: 16px 20px;
+
+    font-weight: 600;
+}
+
+
+/* =========================================
+   RESPONSIVE
+========================================= */
+
+@media (max-width: 1200px) {
+
+    .filter-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .summary-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .summary-actions {
+        justify-content: flex-start;
+    }
+
+    .header-top-row {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 768px) {
+
+    .app-shell {
+        padding: 14px;
+    }
+
+    .filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .search-button-row {
+        flex-wrap: wrap;
+    }
+
+    .summary-group {
+        flex-direction: column;
+    }
+
+    .issue-equipment-header {
+        grid-template-columns: 1fr;
+    }
+
+    .issue-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.data-table th,
+.data-table td {
+    min-width: 72px;
+
+    padding: 10px 12px;
+
+    text-align: center;
+
+    white-space: nowrap;
+}
+
+.data-table th:nth-child(1),
+.data-table td:nth-child(1) {
+    min-width: 220px;
+    text-align: left;
+}
+
+.data-table th:nth-child(2),
+.data-table td:nth-child(2) {
+    min-width: 160px;
+}
+
+.data-table th:nth-child(3),
+.data-table td:nth-child(3) {
+    min-width: 160px;
+}
+
+.issue-summary-grid {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.issue-summary-card {
+    min-width: 180px;
+
+    padding: 12px;
+
+    border-radius: 8px;
+
+    border: 1px solid #d1d5db;
+
+    background: #f9fafb;
+}
+
+.issue-summary-card.critical {
+    border-left: 5px solid #dc2626;
+}
+
+.issue-summary-card.noncritical {
+    border-left: 5px solid #d97706;
+}
+
+.issue-summary-label {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+
+.issue-summary-value {
+    font-size: 24px;
+    font-weight: 700;
+}

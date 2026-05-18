@@ -1,0 +1,33 @@
+# DC3 Construction Equipment Search
+
+Internal tool for the DC3 project. Search equipment checklist status and view issue details by equipment ID.
+
+## What it does
+
+- Search equipment by ID, area, or type
+- View commissioning phase completion status (L2–L5)
+- View critical and non-critical issues per equipment
+- Upload new data exports to update the site for all users
+
+## How to update the data
+
+1. Run `stage5_CATEGORY_OUTPUT_v2.py` to generate a new `equipment_data.json`
+2. Open the live site
+3. Click **Upload JSON** in the top right
+4. Select the generated `equipment_data.json` file
+5. The site updates for all users immediately
+
+## Stack
+
+- Static HTML/CSS/vanilla JS frontend
+- Netlify Functions (Node.js) for shared data storage
+- Netlify Blobs for persistent JSON storage
+- Python ETL script generates the source data from Cx Alloy exports
+
+## Netlify build settings
+
+- **Publish directory:** `netlify`
+- **Functions directory:** `netlify/functions`
+
+## Files
+

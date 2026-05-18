@@ -1,0 +1,452 @@
+<!--
+File: /site/index.html
+Purpose: Static frontend shell for DC3 Construction Equipment Search
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Construction Equipment Search</title>
+
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+    <!-- =========================================
+         APPLICATION CONTAINER
+    ========================================== -->
+    <div class="app-shell">
+
+        <!-- =========================================
+             HEADER
+        ========================================== -->
+        <header class="app-header">
+
+            <div class="header-top-row">
+                <div>
+                    <h1 class="app-title">
+                        Construction Equipment Search
+                    </h1>
+
+                    <p class="app-subtitle">
+                        Paste equipment IDs to filter checklist status and issue counts
+                    </p>
+                </div>
+
+                <div class="header-actions">
+
+                    <input
+                        type="file"
+                        id="json-upload"
+                        accept=".json"
+                        hidden
+                    />
+
+                    <button
+                        id="upload-json-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Upload JSON
+                    </button>
+
+                    <button
+                        id="reload-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Reload Default Data
+                    </button>
+
+                </div>
+            </div>
+
+            <!-- Building selector tabs -->
+            <nav class="building-nav" aria-label="Building selector">
+                <button
+                    class="building-tab active"
+                    data-building="DC1"
+                    type="button"
+                >
+                    DC1
+                </button>
+                <button
+                    class="building-tab"
+                    data-building="DC2"
+                    type="button"
+                >
+                    DC2
+                </button>
+                <button
+                    class="building-tab"
+                    data-building="DC3"
+                    type="button"
+                >
+                    DC3
+                </button>
+            </nav>
+
+            <div class="metadata-row">
+
+                <div class="metadata-item">
+                    <span class="metadata-label">Equipment:</span>
+                    <span id="total-equipment">—</span>
+                </div>
+
+                <div class="metadata-item">
+                    <span class="metadata-label">Data Run:</span>
+                    <span id="generated-at">Loading...</span>
+                </div>
+
+            </div>
+
+        </header>
+
+        <!-- =========================================
+             ERROR BANNER
+        ========================================== -->
+        <section
+            id="error-banner"
+            class="error-banner hidden"
+            aria-live="assertive"
+        >
+            Could not load equipment data. Run the Python export script and upload the JSON file.
+        </section>
+
+        <section
+            id="success-banner"
+            class="success-banner hidden"
+            aria-live="polite"
+        ></section>
+
+        <!-- =========================================
+             SEARCH SECTION
+        ========================================== -->
+        <section class="panel search-panel">
+
+            <div class="panel-header">
+                <h2>Search</h2>
+            </div>
+
+            <div class="search-controls">
+
+                <label for="search-input" class="sr-only">
+                    Equipment Search Input
+                </label>
+
+                <textarea
+                    id="search-input"
+                    class="search-textarea"
+                    placeholder="Paste equipment IDs here...
+
+Examples:
+UPS-D130
+UPS-E130
+UPS-F130
+
+Supports:
+• New lines
+• Excel multi-column paste
+• Comma-separated values
+• Tab-separated values"
+                    rows="8"
+                ></textarea>
+
+                <div class="search-button-row">
+
+                    <button
+                        id="search-btn"
+                        class="primary-btn"
+                        type="button"
+                    >
+                        Search
+                    </button>
+
+                    <button
+                        id="clear-search-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Clear
+                    </button>
+
+                </div>
+
+                <div class="search-help">
+                    Tip: Press Ctrl + Enter to search
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             RESULTS SUMMARY
+        ========================================== -->
+        <section class="panel summary-panel">
+
+            <div class="summary-row">
+
+                <div class="summary-group">
+
+                    <div class="summary-card">
+                        <span class="summary-label">
+                            Search Results
+                        </span>
+
+                        <span
+                            id="results-summary"
+                            class="summary-value"
+                        >
+                            Loading...
+                        </span>
+                    </div>
+
+                    <div class="summary-card">
+                        <span class="summary-label">
+                            Issues View
+                        </span>
+
+                        <span
+                            id="issues-summary"
+                            class="summary-value"
+                        >
+                            —
+                        </span>
+                    </div>
+
+                    <div class="summary-card">
+                        <span class="summary-label">
+                            Not Found
+                        </span>
+
+                        <span
+                            id="not-found-summary"
+                            class="summary-value"
+                        >
+                            —
+                        </span>
+                    </div>
+
+                </div>
+
+                <div class="summary-actions">
+
+                    <button
+                        id="copy-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Copy Table
+                    </button>
+
+                    <button
+                        id="download-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Download CSV
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             FILTER SECTION
+        ========================================== -->
+        <section class="panel filter-panel">
+
+            <div class="panel-header">
+                <h2>Filter Results</h2>
+            </div>
+
+            <div class="filter-grid">
+
+                <div class="filter-field">
+                    <label for="equipment-filter">
+                        Equipment ID
+                    </label>
+
+                    <input
+                        id="equipment-filter"
+                        type="text"
+                        placeholder="Filter Equipment ID"
+                    />
+                </div>
+
+                <div class="filter-field">
+                    <label for="area-filter">
+                        Area
+                    </label>
+
+                    <select id="area-filter">
+                        <option value="">All Areas</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="type-filter">
+                        Equipment Type
+                    </label>
+
+                    <select id="type-filter">
+                        <option value="">All Types</option>
+                    </select>
+                </div>
+
+                <div class="filter-actions">
+
+                    <button
+                        id="clear-filters-btn"
+                        class="secondary-btn"
+                        type="button"
+                    >
+                        Clear Filters
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             CHECKLIST VIEW
+        ========================================== -->
+        <section class="panel checklist-panel">
+
+            <div class="panel-header sticky-panel-header">
+
+                <div class="panel-title-group">
+                    <h2>Checklist View</h2>
+
+                    <span
+                        id="checklist-count"
+                        class="panel-count"
+                    >
+                        —
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="table-scroll-container">
+
+                <table
+                    id="checklist-table"
+                    class="data-table"
+                >
+
+                    <thead id="checklist-head">
+                        <!-- Dynamically rendered -->
+                    </thead>
+
+                    <tbody id="checklist-body">
+                        <!-- Dynamically rendered -->
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             ISSUES VIEW
+        ========================================== -->
+        <section class="panel issues-panel">
+
+            <div class="panel-header sticky-panel-header">
+
+                <div class="panel-title-group">
+
+                    <h2>Issues View</h2>
+
+                    <span
+                        id="issues-count"
+                        class="panel-count"
+                    >
+                        —
+                    </span>
+
+                </div>
+
+                <button
+                    id="toggle-issues-btn"
+                    class="secondary-btn"
+                    type="button"
+                    aria-expanded="true"
+                >
+                    Collapse
+                </button>
+
+            </div>
+
+            <div
+                id="issues-container"
+                class="issues-container"
+            >
+                <!-- Dynamically rendered -->
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             NOT FOUND SECTION
+        ========================================== -->
+        <section
+            id="not-found-section"
+            class="panel not-found-panel hidden"
+        >
+
+            <div class="panel-header">
+                <h2>Not Found</h2>
+            </div>
+
+            <p class="not-found-description">
+                These IDs were not found in the current dataset:
+            </p>
+
+            <div
+                id="not-found"
+                class="not-found-list"
+            >
+                <!-- Dynamically rendered -->
+            </div>
+
+        </section>
+
+        <!-- =========================================
+             EMPTY STATE
+        ========================================== -->
+        <section
+            id="empty-state"
+            class="panel empty-panel hidden"
+        >
+
+            <div class="empty-state-content">
+                <h2>No Results Found</h2>
+
+                <p>
+                    No equipment matched the current search and filter criteria.
+                </p>
+            </div>
+
+        </section>
+
+    </div>
+
+    <!-- =========================================
+         APPLICATION SCRIPT
+    ========================================== -->
+    <script src="app.js"></script>
+
+</body>
+</html>
