@@ -161,21 +161,10 @@ function loadBuildingData(buildingKey) {
         );
     });
 
-    // Deactivate GNG tab and restore standard panels when switching to a building tab
-    const gngTabBtn = document.getElementById("gng-tab-btn");
-    if (gngTabBtn) {
-        gngTabBtn.classList.remove("active");
-    }
-    const gngPanel = document.getElementById("gng-panel");
-    if (gngPanel) {
-        gngPanel.classList.add("hidden");
-    }
-    // Restore standard panels to default display
-    document.querySelectorAll(".search-panel, .filter-panel, .checklist-panel, .issues-panel").forEach(panel => {
-        panel.style.display = "";
-    });
-
     loadDataIntoState(buildingData);
+
+    // Re-render inline GNG section for the newly selected building
+    renderGNGSection();
 }
 
 function loadDataIntoState(data) {
@@ -243,9 +232,6 @@ function bindEvents() {
             }
         });
     });
-
-    // GNG Readiness tab activation
-    document.getElementById("gng-tab-btn").addEventListener("click", activateGNGTab);
 
     dom.searchBtn.addEventListener(
         "click",
@@ -709,9 +695,10 @@ function renderChecklistHead() {
 
     dom.checklistHead.innerHTML = `
         <tr>
-            ${columns.map(
-                c => `<th>${c}</th>`
-            ).join("")}
+            ${columns.map((c, i) => {
+                const frozenClass = i < 3 ? ` class="frozen-col-${i + 1}${i === 2 ? ' frozen-col-separator' : ''}"` : '';
+                return `<th${frozenClass}>${c}</th>`;
+            }).join("")}
         </tr>
     `;
 }
@@ -725,38 +712,24 @@ function renderChecklistBody() {
         const tr =
             document.createElement("tr");
 
-        tr.innerHTML = [
+        const cells = [
+            { value: row["Equipment ID"], col: 1 },
+            { value: row["Area"], col: 2 },
+            { value: row["Equipment Type"], col: 3 },
+        ];
 
-            renderCell(
-                row["Equipment ID"]
-            ),
+        // First 3 cells get frozen classes
+        let html = cells.map(c => {
+            const cls = `frozen-col-${c.col}${c.col === 3 ? ' frozen-col-separator' : ''}`;
+            return `<td class="${cls}">${escapeHtml(String(c.value ?? ""))}</td>`;
+        }).join("");
 
-            renderCell(
-                row["Area"]
-            ),
+        // Remaining cells unchanged
+        html += state.phaseColumns.map(phase => renderPhaseCell(row[phase])).join("");
+        html += renderIssueCountCell(row["Critical Issues #"], true);
+        html += renderIssueCountCell(row["Non-Critical Issues #"], false);
 
-            renderCell(
-                row["Equipment Type"]
-            ),
-
-            ...state.phaseColumns.map(
-                phase =>
-                    renderPhaseCell(
-                        row[phase]
-                    )
-            ),
-
-            renderIssueCountCell(
-                row["Critical Issues #"],
-                true
-            ),
-
-            renderIssueCountCell(
-                row["Non-Critical Issues #"],
-                false
-            )
-
-        ].join("");
+        tr.innerHTML = html;
 
         dom.checklistBody.appendChild(tr);
     }
@@ -1303,50 +1276,24 @@ function escapeHtml(value) {
 // =========================================
 // GNG READINESS REPORT — Module State
 // =========================================
+let gngDHMap = {};
+let gngAllChecklists = [];
 let gngCurrentRows = [];
-let gngCurrentDHLabel = "";
+let gngCurrentDHLabel = "All";
+let gngSelectedTypes = [];
 
-// =========================================
-// GNG READINESS REPORT — Tab Activation
-// =========================================
 
-/**
- * Activate the GNG Readiness tab.
- * Hides all standard panels, shows the GNG panel, and renders the report.
- */
-function activateGNGTab() {
-    // Update active tab UI: add active to GNG tab, remove from all others
-    document.querySelectorAll(".building-tab").forEach(tab => {
-        tab.classList.remove("active");
-    });
-    document.getElementById("gng-tab-btn").classList.add("active");
-
-    // Hide standard panels
-    document.querySelectorAll(".search-panel, .filter-panel, .checklist-panel, .issues-panel").forEach(panel => {
-        panel.style.display = "none";
-    });
-
-    // Hide the L3 panel if present
-    const l3Panel = document.getElementById("l3-panel");
-    if (l3Panel) {
-        l3Panel.classList.add("hidden");
-    }
-
-    // Show the GNG panel
-    document.getElementById("gng-panel").classList.remove("hidden");
-
-    // Render the GNG report content
-    renderGNGReport();
-}
 
 /**
- * Render the full GNG Readiness Report:
- * - Data hall <select> dropdown
- * - Vendor Summary section container
- * - Detail Report section container
- * Wires the dropdown onchange to re-render both report sections.
+ * Render the inline GNG Readiness section:
+ * - DH selector dropdown with "All" as first and default-selected option
+ * - Equipment Type multi-select filter
+ * - Vendor Summary container
+ * - Detail Report container
+ * Wires event listeners for DH selector change and type filter change.
+ * Calls applyGNGFilters() for the initial render.
  */
-function renderGNGReport() {
+function renderGNGSection() {
     const content = document.getElementById("gng-content");
     if (!content) return;
 
@@ -1364,48 +1311,107 @@ function renderGNGReport() {
     const dhLabels = Object.keys(dhMap).filter(k => k !== "Other").sort();
     if (dhMap["Other"]) dhLabels.push("Other");
 
-    // Build the selector HTML
-    const optionsHtml = dhLabels.map((label, idx) =>
-        `<option value="${escapeHtml(label)}"${idx === 0 ? " selected" : ""}>${escapeHtml(label)}</option>`
+    // Build equipment type options (sorted distinct types)
+    const equipmentTypes = buildEquipmentTypeOptions(openChecklists);
+
+    // Render controls: DH selector with "All" first, then Equipment Type multi-select
+    const dhOptionsHtml = [
+        '<option value="All" selected>All</option>',
+        ...dhLabels.map(label =>
+            `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`
+        )
+    ].join("");
+
+    const typeOptionsHtml = equipmentTypes.map(type =>
+        `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`
     ).join("");
 
-    // Render the controls and section containers
     content.innerHTML = `
-        <div class="gng-controls">
-            <label for="gng-dh-select">Data Hall:</label>
-            <select id="gng-dh-select" class="filter-field">
-                ${optionsHtml}
-            </select>
+        <div class="gng-controls gng-filter-row">
+            <div class="filter-field">
+                <label for="gng-dh-select">Data Hall</label>
+                <select id="gng-dh-select">
+                    ${dhOptionsHtml}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="gng-type-filter">Equipment Type</label>
+                <select id="gng-type-filter" multiple>
+                    ${typeOptionsHtml}
+                </select>
+                <span id="gng-type-filter-count" class="filter-count-label"></span>
+            </div>
         </div>
         <div id="gng-vendor-summary"></div>
         <div id="gng-detail-report"></div>
     `;
 
-    // Function to render both sections for the selected DH_Label
-    function renderSections() {
-        const selectedLabel = document.getElementById("gng-dh-select").value;
-        const rows = dhMap[selectedLabel] || [];
+    // Store references for filter logic
+    gngDHMap = dhMap;
+    gngAllChecklists = openChecklists;
 
-        // Update module-level state for clipboard/CSV export functions
-        gngCurrentRows = rows;
-        gngCurrentDHLabel = selectedLabel;
+    // Wire event handlers
+    document.getElementById("gng-dh-select").addEventListener("change", applyGNGFilters);
+    document.getElementById("gng-type-filter").addEventListener("change", handleTypeFilterChange);
 
-        // Render vendor summary table
-        if (typeof renderVendorSummaryTable === "function") {
-            renderVendorSummaryTable(rows, selectedLabel);
-        }
+    // Initial render with "All" and no type filter
+    applyGNGFilters();
+}
 
-        // Render detail report table
-        if (typeof renderDetailTable === "function") {
-            renderDetailTable(rows, selectedLabel);
-        }
+/**
+ * Apply combined DH + Equipment Type filters and re-render GNG tables.
+ * Reads DH selector and type multi-select values, filters data accordingly,
+ * stores filtered state, and renders both vendor summary and detail tables.
+ */
+function applyGNGFilters() {
+    const dhSelect = document.getElementById("gng-dh-select");
+    const typeFilter = document.getElementById("gng-type-filter");
+    if (!dhSelect || !typeFilter) return;
+
+    const selectedDH = dhSelect.value;
+    const selectedTypes = Array.from(typeFilter.selectedOptions).map(o => o.value);
+
+    // Step 1: Filter by data hall
+    let rows;
+    if (selectedDH === "All") {
+        rows = gngAllChecklists;
+    } else {
+        rows = gngDHMap[selectedDH] || [];
     }
 
-    // Wire onchange on the select to re-render both report sections
-    document.getElementById("gng-dh-select").addEventListener("change", renderSections);
+    // Step 2: Filter by equipment type (empty selection = all types)
+    if (selectedTypes.length > 0) {
+        rows = rows.filter(eq => selectedTypes.includes(eq.equipment_type));
+    }
 
-    // Initial render for the first (default) selected data hall
-    renderSections();
+    // Store current filtered state for export
+    gngCurrentRows = rows;
+    gngCurrentDHLabel = selectedDH;
+    gngSelectedTypes = selectedTypes;
+
+    // Render tables with filtered data
+    renderVendorSummaryTable(rows, selectedDH, selectedTypes);
+    renderDetailTable(rows, selectedDH);
+}
+
+/**
+ * Handle equipment type multi-select change:
+ * Updates the count label and triggers filter application.
+ */
+function handleTypeFilterChange() {
+    const typeFilter = document.getElementById("gng-type-filter");
+    const countLabel = document.getElementById("gng-type-filter-count");
+    if (!typeFilter || !countLabel) return;
+
+    const selectedCount = typeFilter.selectedOptions.length;
+
+    if (selectedCount === 0) {
+        countLabel.textContent = "";
+    } else {
+        countLabel.textContent = `${selectedCount} selected`;
+    }
+
+    applyGNGFilters();
 }
 
 // =========================================
@@ -1435,6 +1441,26 @@ function buildDHMap(openChecklists) {
         map[label].push(eq);
     }
     return map;
+}
+
+/**
+ * Extract distinct equipment_type values from open_checklists,
+ * sorted in ascending case-insensitive alphabetical order.
+ * Records with missing/falsy equipment_type are excluded.
+ *
+ * @param {Array} openChecklists - Array of equipment objects
+ * @returns {string[]} Sorted distinct equipment type values
+ */
+function buildEquipmentTypeOptions(openChecklists) {
+    const typeSet = new Set();
+    for (const eq of openChecklists) {
+        if (eq.equipment_type) {
+            typeSet.add(eq.equipment_type);
+        }
+    }
+    return [...typeSet].sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase())
+    );
 }
 
 /**
@@ -1477,16 +1503,17 @@ function buildVendorSummary(rows) {
  * One <tr> per vendor with counts and row total.
  * A TOTAL footer <tr> with column-wise sums.
  * Renders "0" for cells where a vendor has no items for a given type.
- * Renders "No open checklists for this data hall." when rows is empty.
+ * Renders empty message when rows is empty or no vendors found.
+ * When selectedTypes is non-empty, excludes non-selected type columns.
  * Wraps table in .table-scroll-container; applies data-table class to <table>.
  */
-function renderVendorSummaryTable(rows, dhLabel) {
+function renderVendorSummaryTable(rows, dhLabel, selectedTypes = []) {
     const container = document.getElementById("gng-vendor-summary");
     if (!container) return;
 
     // Empty state
     if (!rows || rows.length === 0) {
-        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        container.innerHTML = '<p class="gng-copy-msg">No equipment with open checklists for this selection.</p>';
         return;
     }
 
@@ -1494,24 +1521,30 @@ function renderVendorSummaryTable(rows, dhLabel) {
 
     // If no vendors found (all equipment has empty open_items), show empty message
     if (vendors.length === 0) {
-        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        container.innerHTML = '<p class="gng-copy-msg">No equipment with open checklists for this selection.</p>';
         return;
+    }
+
+    // If type filter is active, exclude non-selected type columns
+    let displayTypes = types;
+    if (selectedTypes.length > 0) {
+        displayTypes = types.filter(t => selectedTypes.includes(t));
     }
 
     // Build header row
     const headerCells = ['<th>Vendor</th>']
-        .concat(types.map(t => `<th>${escapeHtml(t)}</th>`))
+        .concat(displayTypes.map(t => `<th>${escapeHtml(t)}</th>`))
         .concat(['<th>Total Open Checklists</th>'])
         .join("");
 
     // Build vendor data rows and track column totals
     const colTotals = {};
-    for (const t of types) colTotals[t] = 0;
+    for (const t of displayTypes) colTotals[t] = 0;
     let grandTotal = 0;
 
     const bodyRows = vendors.map(vendor => {
         let rowTotal = 0;
-        const cells = types.map(type => {
+        const cells = displayTypes.map(type => {
             const count = (counts[vendor] && counts[vendor][type]) || 0;
             rowTotal += count;
             colTotals[type] += count;
@@ -1522,7 +1555,7 @@ function renderVendorSummaryTable(rows, dhLabel) {
     }).join("");
 
     // Build TOTAL footer row
-    const totalCells = types.map(type => `<td>${colTotals[type]}</td>`).join("");
+    const totalCells = displayTypes.map(type => `<td>${colTotals[type]}</td>`).join("");
     const totalRow = `<tr class="gng-vendor-total"><td><strong>TOTAL</strong></td>${totalCells}<td><strong>${grandTotal}</strong></td></tr>`;
 
     container.innerHTML = `
@@ -1622,20 +1655,20 @@ function renderDetailTable(rows, dhLabel) {
     // Build title line
     const titleText = `${escapeHtml(dhLabel)} | ${rowCount} equipment rows | ${totalOpen} open checklist occurrences | Checklist pairs expand through #${maxN}`;
 
-    // Build header row
-    let headerCells = '<th>Equipment ID</th><th>Area</th><th>Equipment Type</th>';
+    // Build header row — first 3 columns get frozen classes
+    let headerCells = '<th class="frozen-col-1">Equipment ID</th><th class="frozen-col-2">Area</th><th class="frozen-col-3 frozen-col-separator">Equipment Type</th>';
     for (let i = 1; i <= maxN; i++) {
         headerCells += `<th>Missing Checklist #${i}</th><th>Assignee #${i}</th>`;
     }
 
-    // Build body rows
+    // Build body rows — first 3 cells get frozen classes
     let bodyRows = '';
     for (const eq of sortedRows) {
         const openItems = eq.open_items || [];
         let cells = '';
-        cells += `<td>${escapeHtml(eq.equipment_id || "")}</td>`;
-        cells += `<td>${escapeHtml(eq.area || "")}</td>`;
-        cells += `<td>${escapeHtml(eq.equipment_type || "")}</td>`;
+        cells += `<td class="frozen-col-1">${escapeHtml(eq.equipment_id || "")}</td>`;
+        cells += `<td class="frozen-col-2">${escapeHtml(eq.area || "")}</td>`;
+        cells += `<td class="frozen-col-3 frozen-col-separator">${escapeHtml(eq.equipment_type || "")}</td>`;
 
         for (let i = 0; i < maxN; i++) {
             if (i < openItems.length) {
@@ -1770,17 +1803,24 @@ function buildCSVContent(type, data) {
 function getGNGTableData(type) {
     const rows = gngCurrentRows;
     const dhLabel = gngCurrentDHLabel;
+    const selectedTypes = gngSelectedTypes;
 
     if (type === "vendor") {
         const { vendors, types, counts } = buildVendorSummary(rows);
 
+        // If type filter is active, exclude non-selected type columns (matches rendered table)
+        let displayTypes = types;
+        if (selectedTypes.length > 0) {
+            displayTypes = types.filter(t => selectedTypes.includes(t));
+        }
+
         const title = "GNG Readiness – Open Checklist Assignment Report / Vendor Summary";
         const subHeader = `Data Hall: ${dhLabel}`;
-        const headers = ["Vendor", ...types, "Total Open Checklists"];
+        const headers = ["Vendor", ...displayTypes, "Total Open Checklists"];
 
         const dataRows = vendors.map(vendor => {
             let rowTotal = 0;
-            const cells = types.map(t => {
+            const cells = displayTypes.map(t => {
                 const count = (counts[vendor] && counts[vendor][t]) || 0;
                 rowTotal += count;
                 return String(count);
@@ -1789,7 +1829,7 @@ function getGNGTableData(type) {
         });
 
         // TOTAL row
-        const colTotals = types.map(t => {
+        const colTotals = displayTypes.map(t => {
             let total = 0;
             for (const vendor of vendors) {
                 total += (counts[vendor] && counts[vendor][t]) || 0;
