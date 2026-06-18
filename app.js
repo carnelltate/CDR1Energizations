@@ -161,6 +161,20 @@ function loadBuildingData(buildingKey) {
         );
     });
 
+    // Deactivate GNG tab and restore standard panels when switching to a building tab
+    const gngTabBtn = document.getElementById("gng-tab-btn");
+    if (gngTabBtn) {
+        gngTabBtn.classList.remove("active");
+    }
+    const gngPanel = document.getElementById("gng-panel");
+    if (gngPanel) {
+        gngPanel.classList.add("hidden");
+    }
+    // Restore standard panels to default display
+    document.querySelectorAll(".search-panel, .filter-panel, .checklist-panel, .issues-panel").forEach(panel => {
+        panel.style.display = "";
+    });
+
     loadDataIntoState(buildingData);
 }
 
@@ -224,9 +238,14 @@ function bindEvents() {
     // Building tab switching
     dom.buildingTabs.forEach(tab => {
         tab.addEventListener("click", () => {
-            loadBuildingData(tab.dataset.building);
+            if (tab.dataset.building) {
+                loadBuildingData(tab.dataset.building);
+            }
         });
     });
+
+    // GNG Readiness tab activation
+    document.getElementById("gng-tab-btn").addEventListener("click", activateGNGTab);
 
     dom.searchBtn.addEventListener(
         "click",
@@ -1279,4 +1298,607 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+// =========================================
+// GNG READINESS REPORT — Module State
+// =========================================
+let gngCurrentRows = [];
+let gngCurrentDHLabel = "";
+
+// =========================================
+// GNG READINESS REPORT — Tab Activation
+// =========================================
+
+/**
+ * Activate the GNG Readiness tab.
+ * Hides all standard panels, shows the GNG panel, and renders the report.
+ */
+function activateGNGTab() {
+    // Update active tab UI: add active to GNG tab, remove from all others
+    document.querySelectorAll(".building-tab").forEach(tab => {
+        tab.classList.remove("active");
+    });
+    document.getElementById("gng-tab-btn").classList.add("active");
+
+    // Hide standard panels
+    document.querySelectorAll(".search-panel, .filter-panel, .checklist-panel, .issues-panel").forEach(panel => {
+        panel.style.display = "none";
+    });
+
+    // Hide the L3 panel if present
+    const l3Panel = document.getElementById("l3-panel");
+    if (l3Panel) {
+        l3Panel.classList.add("hidden");
+    }
+
+    // Show the GNG panel
+    document.getElementById("gng-panel").classList.remove("hidden");
+
+    // Render the GNG report content
+    renderGNGReport();
+}
+
+/**
+ * Render the full GNG Readiness Report:
+ * - Data hall <select> dropdown
+ * - Vendor Summary section container
+ * - Detail Report section container
+ * Wires the dropdown onchange to re-render both report sections.
+ */
+function renderGNGReport() {
+    const content = document.getElementById("gng-content");
+    if (!content) return;
+
+    const openChecklists = (
+        state.rawData?.buildings?.[state.activeBuilding]?.open_checklists
+    );
+
+    if (!openChecklists || openChecklists.length === 0) {
+        content.innerHTML = '<p>GNG Readiness data is not available for this building.</p>';
+        return;
+    }
+
+    // Build DH_Label → equipment list map
+    const dhMap = buildDHMap(openChecklists);
+    const dhLabels = Object.keys(dhMap).filter(k => k !== "Other").sort();
+    if (dhMap["Other"]) dhLabels.push("Other");
+
+    // Build the selector HTML
+    const optionsHtml = dhLabels.map((label, idx) =>
+        `<option value="${escapeHtml(label)}"${idx === 0 ? " selected" : ""}>${escapeHtml(label)}</option>`
+    ).join("");
+
+    // Render the controls and section containers
+    content.innerHTML = `
+        <div class="gng-controls">
+            <label for="gng-dh-select">Data Hall:</label>
+            <select id="gng-dh-select" class="filter-field">
+                ${optionsHtml}
+            </select>
+        </div>
+        <div id="gng-vendor-summary"></div>
+        <div id="gng-detail-report"></div>
+    `;
+
+    // Function to render both sections for the selected DH_Label
+    function renderSections() {
+        const selectedLabel = document.getElementById("gng-dh-select").value;
+        const rows = dhMap[selectedLabel] || [];
+
+        // Update module-level state for clipboard/CSV export functions
+        gngCurrentRows = rows;
+        gngCurrentDHLabel = selectedLabel;
+
+        // Render vendor summary table
+        if (typeof renderVendorSummaryTable === "function") {
+            renderVendorSummaryTable(rows, selectedLabel);
+        }
+
+        // Render detail report table
+        if (typeof renderDetailTable === "function") {
+            renderDetailTable(rows, selectedLabel);
+        }
+    }
+
+    // Wire onchange on the select to re-render both report sections
+    document.getElementById("gng-dh-select").addEventListener("change", renderSections);
+
+    // Initial render for the first (default) selected data hall
+    renderSections();
+}
+
+// =========================================
+// GNG READINESS REPORT — Utility Functions
+// =========================================
+
+/**
+ * Derive the data hall label from an Area string.
+ * Matches DH followed by 3–4 digits (case-insensitive),
+ * returns "DH" + first 3 digits of match, or "Other" if no match.
+ */
+function deriveDHLabel(area) {
+    const m = String(area || "").match(/DH(\d{3,4})/i);
+    if (!m) return "Other";
+    return "DH" + m[1].slice(0, 3);
+}
+
+/**
+ * Group open_checklists records by their derived DH_Label.
+ * Returns an object mapping each label to an array of equipment records.
+ */
+function buildDHMap(openChecklists) {
+    const map = {};
+    for (const eq of openChecklists) {
+        const label = deriveDHLabel(eq.area);
+        if (!map[label]) map[label] = [];
+        map[label].push(eq);
+    }
+    return map;
+}
+
+/**
+ * Build the Vendor Summary cross-tab from filtered equipment rows.
+ * Iterates all eq.open_items to populate vendorSet, typeSet, and counts[vendor][type].
+ * Sorts vendors and types case-insensitively.
+ * Returns { vendors: string[], types: string[], counts: { [vendor]: { [type]: number } } }
+ */
+function buildVendorSummary(rows) {
+    const vendorSet = new Set();
+    const typeSet = new Set();
+    const counts = {};
+
+    for (const eq of rows) {
+        const type = eq.equipment_type || "Unknown";
+        typeSet.add(type);
+        for (const item of eq.open_items) {
+            const vendor = item.vendor || "Unassigned";
+            vendorSet.add(vendor);
+            if (!counts[vendor]) counts[vendor] = {};
+            counts[vendor][type] = (counts[vendor][type] || 0) + 1;
+        }
+    }
+
+    const vendors = [...vendorSet].sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+    const types = [...typeSet].sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+
+    return { vendors, types, counts };
+}
+
+/**
+ * Render the Vendor Summary table into #gng-vendor-summary.
+ * Title: "GNG Readiness – Open Checklist Assignment Report / Vendor Summary"
+ * Sub-header: "Data Hall: {dhLabel}"
+ * One <th> per equipment type plus "Total Open Checklists".
+ * One <tr> per vendor with counts and row total.
+ * A TOTAL footer <tr> with column-wise sums.
+ * Renders "0" for cells where a vendor has no items for a given type.
+ * Renders "No open checklists for this data hall." when rows is empty.
+ * Wraps table in .table-scroll-container; applies data-table class to <table>.
+ */
+function renderVendorSummaryTable(rows, dhLabel) {
+    const container = document.getElementById("gng-vendor-summary");
+    if (!container) return;
+
+    // Empty state
+    if (!rows || rows.length === 0) {
+        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        return;
+    }
+
+    const { vendors, types, counts } = buildVendorSummary(rows);
+
+    // If no vendors found (all equipment has empty open_items), show empty message
+    if (vendors.length === 0) {
+        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        return;
+    }
+
+    // Build header row
+    const headerCells = ['<th>Vendor</th>']
+        .concat(types.map(t => `<th>${escapeHtml(t)}</th>`))
+        .concat(['<th>Total Open Checklists</th>'])
+        .join("");
+
+    // Build vendor data rows and track column totals
+    const colTotals = {};
+    for (const t of types) colTotals[t] = 0;
+    let grandTotal = 0;
+
+    const bodyRows = vendors.map(vendor => {
+        let rowTotal = 0;
+        const cells = types.map(type => {
+            const count = (counts[vendor] && counts[vendor][type]) || 0;
+            rowTotal += count;
+            colTotals[type] += count;
+            return `<td>${count}</td>`;
+        });
+        grandTotal += rowTotal;
+        return `<tr><td>${escapeHtml(vendor)}</td>${cells.join("")}<td>${rowTotal}</td></tr>`;
+    }).join("");
+
+    // Build TOTAL footer row
+    const totalCells = types.map(type => `<td>${colTotals[type]}</td>`).join("");
+    const totalRow = `<tr class="gng-vendor-total"><td><strong>TOTAL</strong></td>${totalCells}<td><strong>${grandTotal}</strong></td></tr>`;
+
+    container.innerHTML = `
+        <div class="gng-section-header">
+            <h3 class="gng-report-title">GNG Readiness – Open Checklist Assignment Report / Vendor Summary</h3>
+            <div class="gng-section-buttons">
+                <button type="button" class="gng-copy-btn" onclick="copyGNGToClipboard('vendor')">Copy to Clipboard</button>
+                <button type="button" class="gng-download-btn" onclick="downloadGNGCSV('vendor', gngCurrentDHLabel)">Download CSV</button>
+            </div>
+        </div>
+        <p><strong>Data Hall: ${escapeHtml(dhLabel)}</strong></p>
+        <div id="gng-vendor-copy-msg" class="gng-copy-msg"></div>
+        <div class="table-scroll-container">
+            <table class="data-table">
+                <thead><tr>${headerCells}</tr></thead>
+                <tbody>${bodyRows}</tbody>
+                <tfoot>${totalRow}</tfoot>
+            </table>
+        </div>
+    `;
+}
+
+
+// =========================================
+// GNG READINESS REPORT — Detail Report
+// =========================================
+
+/**
+ * Build the detail report data from equipment rows.
+ * Finds maxN (maximum number of open_items across all rows),
+ * sorts rows by equipment_id ascending, and returns
+ * { sortedRows, maxN }.
+ *
+ * @param {Array} rows - Array of equipment objects with open_items
+ * @returns {{ sortedRows: Array, maxN: number }}
+ */
+function buildDetailReport(rows) {
+    if (!rows || rows.length === 0) {
+        return { sortedRows: [], maxN: 0 };
+    }
+
+    // Find max open_items length across all rows
+    let maxN = 0;
+    for (const eq of rows) {
+        const len = (eq.open_items || []).length;
+        if (len > maxN) maxN = len;
+    }
+
+    // Sort rows by equipment_id ascending (case-insensitive lexicographic)
+    const sortedRows = [...rows].sort((a, b) => {
+        const idA = String(a.equipment_id || "").toUpperCase();
+        const idB = String(b.equipment_id || "").toUpperCase();
+        if (idA < idB) return -1;
+        if (idA > idB) return 1;
+        return 0;
+    });
+
+    return { sortedRows, maxN };
+}
+
+/**
+ * Render the Detailed Checklist Report table into #gng-detail-report.
+ *
+ * Title line format:
+ *   "{DH_Label} | {rowCount} equipment rows | {totalOpen} open checklist occurrences | Checklist pairs expand through #{maxN}"
+ *
+ * Fixed columns: Equipment ID, Area, Equipment Type
+ * Paired columns: Missing Checklist #1 / Assignee #1 ... Missing Checklist #N / Assignee #N
+ * Rows with fewer than N open items get empty <td> cells for the remaining pairs.
+ *
+ * When rows is empty, renders "No open checklists for this data hall."
+ *
+ * @param {Array} rows - Array of equipment objects for the selected data hall
+ * @param {string} dhLabel - The selected data hall label (e.g., "DH115")
+ */
+function renderDetailTable(rows, dhLabel) {
+    const container = document.getElementById("gng-detail-report");
+    if (!container) return;
+
+    // Handle empty case
+    if (!rows || rows.length === 0) {
+        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        return;
+    }
+
+    // Build sorted data and maxN
+    const { sortedRows, maxN } = buildDetailReport(rows);
+
+    // Calculate total open checklist occurrences
+    let totalOpen = 0;
+    for (const eq of sortedRows) {
+        totalOpen += (eq.open_items || []).length;
+    }
+
+    const rowCount = sortedRows.length;
+
+    // Build title line
+    const titleText = `${escapeHtml(dhLabel)} | ${rowCount} equipment rows | ${totalOpen} open checklist occurrences | Checklist pairs expand through #${maxN}`;
+
+    // Build header row
+    let headerCells = '<th>Equipment ID</th><th>Area</th><th>Equipment Type</th>';
+    for (let i = 1; i <= maxN; i++) {
+        headerCells += `<th>Missing Checklist #${i}</th><th>Assignee #${i}</th>`;
+    }
+
+    // Build body rows
+    let bodyRows = '';
+    for (const eq of sortedRows) {
+        const openItems = eq.open_items || [];
+        let cells = '';
+        cells += `<td>${escapeHtml(eq.equipment_id || "")}</td>`;
+        cells += `<td>${escapeHtml(eq.area || "")}</td>`;
+        cells += `<td>${escapeHtml(eq.equipment_type || "")}</td>`;
+
+        for (let i = 0; i < maxN; i++) {
+            if (i < openItems.length) {
+                cells += `<td>${escapeHtml(openItems[i].phase || "")}</td>`;
+                cells += `<td>${escapeHtml(openItems[i].vendor || "")}</td>`;
+            } else {
+                cells += '<td></td><td></td>';
+            }
+        }
+
+        bodyRows += `<tr>${cells}</tr>`;
+    }
+
+    // Assemble the full HTML with scroll container and data-table class
+    container.innerHTML = `
+        <div class="gng-section-header">
+            <p class="gng-report-title">${titleText}</p>
+            <div class="gng-section-buttons">
+                <button type="button" class="gng-copy-btn" onclick="copyGNGToClipboard('detail')">Copy to Clipboard</button>
+                <button type="button" class="gng-download-btn" onclick="downloadGNGCSV('detail', gngCurrentDHLabel)">Download CSV</button>
+            </div>
+        </div>
+        <div id="gng-detail-copy-msg" class="gng-copy-msg"></div>
+        <div class="table-scroll-container">
+            <table class="data-table">
+                <thead><tr>${headerCells}</tr></thead>
+                <tbody>${bodyRows}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+// =========================================
+// GNG READINESS REPORT — Export Helpers
+// =========================================
+
+/**
+ * CSV-escape a value for GNG reports.
+ * If the string contains a comma, double-quote, or newline,
+ * wrap in double-quotes and double any internal double-quote characters.
+ * Otherwise return as-is.
+ *
+ * @param {*} value - The value to escape
+ * @returns {string}
+ */
+function csvEscapeGNG(value) {
+    const s = String(value ?? "");
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+}
+
+/**
+ * Build a tab-separated value string from table data.
+ * Uses \t as column separator and \n as row separator.
+ * No trailing separator on the final row.
+ *
+ * @param {string} type - "vendor" or "detail"
+ * @param {object} data - The structured table data (from getGNGTableData)
+ * @returns {string} TSV text
+ */
+function buildTSV(type, data) {
+    const rows = [];
+
+    // Title line
+    rows.push(data.title);
+
+    // Sub-header line (vendor summary has data hall sub-header)
+    if (data.subHeader) {
+        rows.push(data.subHeader);
+    }
+
+    // Header row
+    rows.push(data.headers.join("\t"));
+
+    // Data rows
+    for (const row of data.rows) {
+        rows.push(row.join("\t"));
+    }
+
+    // TOTAL row (vendor summary only)
+    if (data.totalRow) {
+        rows.push(data.totalRow.join("\t"));
+    }
+
+    return rows.join("\n");
+}
+
+/**
+ * Build CSV content from table data using csvEscapeGNG for all values.
+ * Includes title line, header row, data rows, and TOTAL row for vendor summary.
+ *
+ * @param {string} type - "vendor" or "detail"
+ * @param {object} data - The structured table data (from getGNGTableData)
+ * @returns {string} CSV text
+ */
+function buildCSVContent(type, data) {
+    const rows = [];
+
+    // Title line
+    rows.push(csvEscapeGNG(data.title));
+
+    // Sub-header line (vendor summary has data hall sub-header)
+    if (data.subHeader) {
+        rows.push(csvEscapeGNG(data.subHeader));
+    }
+
+    // Header row
+    rows.push(data.headers.map(h => csvEscapeGNG(h)).join(","));
+
+    // Data rows
+    for (const row of data.rows) {
+        rows.push(row.map(cell => csvEscapeGNG(cell)).join(","));
+    }
+
+    // TOTAL row (vendor summary only)
+    if (data.totalRow) {
+        rows.push(data.totalRow.map(cell => csvEscapeGNG(cell)).join(","));
+    }
+
+    return rows.join("\n");
+}
+
+/**
+ * Get structured table data for the GNG report section.
+ * Reads from the current module-level state (gngCurrentRows).
+ *
+ * @param {string} type - "vendor" or "detail"
+ * @returns {object} { title, subHeader?, headers, rows, totalRow? }
+ */
+function getGNGTableData(type) {
+    const rows = gngCurrentRows;
+    const dhLabel = gngCurrentDHLabel;
+
+    if (type === "vendor") {
+        const { vendors, types, counts } = buildVendorSummary(rows);
+
+        const title = "GNG Readiness – Open Checklist Assignment Report / Vendor Summary";
+        const subHeader = `Data Hall: ${dhLabel}`;
+        const headers = ["Vendor", ...types, "Total Open Checklists"];
+
+        const dataRows = vendors.map(vendor => {
+            let rowTotal = 0;
+            const cells = types.map(t => {
+                const count = (counts[vendor] && counts[vendor][t]) || 0;
+                rowTotal += count;
+                return String(count);
+            });
+            return [vendor, ...cells, String(rowTotal)];
+        });
+
+        // TOTAL row
+        const colTotals = types.map(t => {
+            let total = 0;
+            for (const vendor of vendors) {
+                total += (counts[vendor] && counts[vendor][t]) || 0;
+            }
+            return total;
+        });
+        const grandTotal = colTotals.reduce((sum, v) => sum + v, 0);
+        const totalRow = ["TOTAL", ...colTotals.map(String), String(grandTotal)];
+
+        return { title, subHeader, headers, rows: dataRows, totalRow };
+    } else {
+        // detail
+        const { sortedRows, maxN } = buildDetailReport(rows);
+
+        // Count total open occurrences
+        let totalOpen = 0;
+        for (const eq of sortedRows) {
+            totalOpen += (eq.open_items || []).length;
+        }
+
+        const title = `${dhLabel} | ${sortedRows.length} equipment rows | ${totalOpen} open checklist occurrences | Checklist pairs expand through #${maxN}`;
+        const headers = ["Equipment ID", "Area", "Equipment Type"];
+        for (let i = 1; i <= maxN; i++) {
+            headers.push(`Missing Checklist #${i}`, `Assignee #${i}`);
+        }
+
+        const dataRows = sortedRows.map(eq => {
+            const openItems = eq.open_items || [];
+            const row = [
+                eq.equipment_id || "",
+                eq.area || "",
+                eq.equipment_type || ""
+            ];
+            for (let i = 0; i < maxN; i++) {
+                if (i < openItems.length) {
+                    row.push(openItems[i].phase || "", openItems[i].vendor || "");
+                } else {
+                    row.push("", "");
+                }
+            }
+            return row;
+        });
+
+        return { title, subHeader: null, headers, rows: dataRows, totalRow: null };
+    }
+}
+
+/**
+ * Copy GNG report section to clipboard as tab-separated text.
+ * On success, shows "Copied!" confirmation for 1500 ms.
+ * On failure, logs console.warn and shows an error message near the button.
+ *
+ * @param {string} type - "vendor" or "detail"
+ */
+async function copyGNGToClipboard(type) {
+    const data = getGNGTableData(type);
+    const text = buildTSV(type, data);
+    const msgId = type === "vendor" ? "gng-vendor-copy-msg" : "gng-detail-copy-msg";
+    const msgEl = document.getElementById(msgId);
+
+    try {
+        await navigator.clipboard.writeText(text);
+        // Show success confirmation
+        if (msgEl) {
+            msgEl.textContent = "Copied!";
+            msgEl.className = "gng-copy-msg gng-copy-success";
+            setTimeout(() => {
+                msgEl.textContent = "";
+                msgEl.className = "gng-copy-msg";
+            }, 1500);
+        }
+    } catch (e) {
+        console.warn("Clipboard unavailable:", e);
+        // Show error message near the button
+        if (msgEl) {
+            msgEl.textContent = "Clipboard access is not available. Use HTTPS or copy manually.";
+            msgEl.className = "gng-copy-msg gng-copy-error";
+        }
+    }
+}
+
+/**
+ * Download GNG report section as a CSV file with UTF-8 BOM.
+ * Filename patterns:
+ *   - vendor: gng_vendor_summary_{dhLabel}_{YYYYMMDD}.csv
+ *   - detail: gng_detail_{dhLabel}_{YYYYMMDD}.csv
+ *
+ * @param {string} type - "vendor" or "detail"
+ * @param {string} dhLabel - The current data hall label
+ */
+function downloadGNGCSV(type, dhLabel) {
+    const data = getGNGTableData(type);
+    const csvContent = "\uFEFF" + buildCSVContent(type, data);
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    // Build date string as YYYYMMDD
+    const now = new Date();
+    const dateStr = now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, "0") +
+        String(now.getDate()).padStart(2, "0");
+
+    link.href = url;
+    link.download = type === "vendor"
+        ? `gng_vendor_summary_${dhLabel}_${dateStr}.csv`
+        : `gng_detail_${dhLabel}_${dateStr}.csv`;
+
+    link.click();
+    URL.revokeObjectURL(url);
 }

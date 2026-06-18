@@ -88,6 +88,14 @@ Purpose: Static frontend shell for DC3 Construction Equipment Search
                 >
                     DC3
                 </button>
+                <button
+                    id="gng-tab-btn"
+                    class="building-tab"
+                    data-tab="gng"
+                    type="button"
+                >
+                    GNG Readiness
+                </button>
             </nav>
 
             <div class="metadata-row">
@@ -438,6 +446,17 @@ Supports:
                     No equipment matched the current search and filter criteria.
                 </p>
             </div>
+
+        </section>
+
+        <!-- =========================================
+             GNG READINESS PANEL
+        ========================================== -->
+        <section id="gng-panel" class="panel hidden">
+
+            <h2>GNG Readiness Report</h2>
+
+            <div id="gng-content"></div>
 
         </section>
 

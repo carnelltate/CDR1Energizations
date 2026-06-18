@@ -821,3 +821,116 @@ a:hover {
     font-size: 24px;
     font-weight: 700;
 }
+
+
+/* =========================================
+   GNG READINESS REPORT
+========================================= */
+
+.gng-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    padding: 16px 20px;
+}
+
+.gng-controls label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.gng-controls select {
+    height: 42px;
+
+    padding: 0 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 14px;
+
+    background: white;
+
+    max-width: 260px;
+}
+
+.gng-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+
+    padding: 14px 20px;
+
+    border-bottom: 1px solid var(--border);
+
+    background: #fafafa;
+}
+
+.gng-report-title {
+    margin: 0;
+
+    font-size: 16px;
+    font-weight: 700;
+
+    color: var(--text);
+}
+
+.gng-vendor-total {
+    font-weight: 700;
+
+    background: #f0f4ff;
+}
+
+.gng-vendor-total td {
+    border-top: 2px solid var(--border);
+}
+
+.gng-section-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.gng-copy-btn,
+.gng-download-btn {
+    padding: 6px 14px;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    border: 1px solid var(--border);
+    border-radius: 6px;
+
+    background: #fff;
+    color: var(--text);
+
+    cursor: pointer;
+
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.gng-copy-btn:hover,
+.gng-download-btn:hover {
+    background: #f0f4ff;
+    border-color: var(--accent);
+}
+
+.gng-copy-msg {
+    min-height: 20px;
+    padding: 0 20px;
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.gng-copy-success {
+    color: #2e7d32;
+    font-weight: 500;
+}
+
+.gng-copy-error {
+    color: #c62828;
+    font-weight: 500;
+}
