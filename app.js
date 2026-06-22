@@ -207,6 +207,12 @@ function loadDataIntoState(data) {
     populateFilters();
 
     applyFiltersAndRender();
+
+    // Refresh the Scheduling Tool panel if it is currently visible (Requirements 2.4, 2.6, 8.1, 8.7)
+    const schedulingPanel = document.getElementById("scheduling-panel");
+    if (schedulingPanel && !schedulingPanel.classList.contains("hidden")) {
+        renderSchedulingPanel();
+    }
 }
 
 function validateData(data) {
@@ -320,6 +326,23 @@ function bindEvents() {
         "change",
         handleJsonUpload
     );
+
+    // Scheduling Tool nav button — activate scheduling panel
+    const schedulingBtn = document.getElementById("scheduling-tool-btn");
+    if (schedulingBtn) {
+        schedulingBtn.addEventListener("click", activateSchedulingTool);
+    }
+
+    // Scheduling Tool "Copy Table" button
+    const schedulingCopyBtn = document.getElementById("scheduling-copy-btn");
+    if (schedulingCopyBtn) {
+        schedulingCopyBtn.addEventListener("click", copySchedulingTable);
+    }
+
+    // Building tabs — deactivate scheduling panel when switching buildings
+    dom.buildingTabs.forEach(tab => {
+        tab.addEventListener("click", deactivateSchedulingTool);
+    });
 }
 
 async function handleJsonUpload(event) {
@@ -2234,4 +2257,770 @@ function downloadGNGCSV(type, dhLabel) {
 
     link.click();
     URL.revokeObjectURL(url);
+}
+
+
+// =========================================
+// SCHEDULING TOOL — Module State & Constants
+// =========================================
+
+const schedulingState = {
+    selectedDataHall: null,       // string | null — currently selected DH label
+    selectedPhase: "L2 Inspections", // "L2 Inspections" | "L2 Walks"
+    selectedSubChecklists: [],    // string[] — currently selected sub-checklist column names
+    computedRows: [],             // SchedulingRow[] — current table data
+    dataHalls: []                 // string[] — available DH labels from current data
+};
+
+const SCHEDULING_PHASE_MAP = {
+    "L2 Inspections": ["L2.1.1", "L2.1.2", "L2.2C", "L2.2E", "L2.2M", "L2.3V"],
+    "L2 Walks": ["L2.4", "L2.4.1", "L2.4.1E", "L2.4.1M"]
+};
+
+const EQUIPMENT_TYPE_ORDER = [
+    "XFMR", "SWD", "UPS", "MBB", "BATT", "CHWP", "VFD",
+    "COD", "MOD", "CHLR", "CDU", "CRAH-ER", "ATS", "PDU", "BUS", "CRAH-DH"
+];
+
+const LINE_UP_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "R"];
+
+// =========================================
+// SCHEDULING TOOL — Data Derivation Functions
+// =========================================
+
+/**
+ * Derive the Data Hall label from an Area string.
+ * Extracts the "DH" prefix followed by a numeric portion from the Area field.
+ * Examples:
+ *   "DH110 [DH]" → "DH110"
+ *   "DH1150 [DH]" → "DH115" (truncates to first 3 digits)
+ *   "" → null
+ *   "Some Other Value" → null
+ *
+ * Returns null if no valid DH pattern can be found.
+ */
+function deriveSchedulingDataHall(area) {
+    if (!area || typeof area !== 'string') return null;
+    const match = area.match(/DH(\d{3,4})/i);
+    if (!match) return null;
+    return "DH" + match[1].slice(0, 3);
+}
+
+/**
+ * Derive Line-Up letter from Equipment ID.
+ * Finds the first substring matching [A-Z]\d{3} pattern and returns the leading letter.
+ * Returns null if no matching segment found.
+ *
+ * Examples:
+ *   "ATS-A110" → "A" (the "A110" segment matches [A-Z]\d{3})
+ *   "SWD-B220-X" → "B"
+ *   "NO-MATCH" → null
+ */
+function deriveLineUp(equipmentId) {
+    if (!equipmentId || typeof equipmentId !== 'string') return null;
+    const match = equipmentId.match(/[A-Z]\d{3}/);
+    return match ? match[0].charAt(0) : null;
+}
+
+// =========================================
+// SCHEDULING TOOL — Navigation & Panel Toggle
+// =========================================
+
+/**
+ * Activate the Scheduling Tool panel.
+ * Hides all other dashboard panels and shows the scheduling panel.
+ * Highlights the Scheduling Tool nav button.
+ */
+function activateSchedulingTool() {
+    // Hide other panels
+    const panelsToHide = document.querySelectorAll(
+        '.search-panel, .summary-panel, .filter-panel, .checklist-panel, .issues-panel'
+    );
+    panelsToHide.forEach(panel => panel.classList.add("hidden"));
+
+    const gngSection = document.getElementById("gng-section");
+    if (gngSection) gngSection.classList.add("hidden");
+
+    const notFoundSection = document.getElementById("not-found-section");
+    if (notFoundSection) notFoundSection.classList.add("hidden");
+
+    const emptyState = document.getElementById("empty-state");
+    if (emptyState) emptyState.classList.add("hidden");
+
+    // Show scheduling panel
+    const schedulingPanel = document.getElementById("scheduling-panel");
+    if (schedulingPanel) schedulingPanel.classList.remove("hidden");
+
+    // Highlight nav button
+    const schedulingBtn = document.getElementById("scheduling-tool-btn");
+    if (schedulingBtn) schedulingBtn.classList.add("active");
+}
+
+/**
+ * Deactivate the Scheduling Tool panel.
+ * Hides the scheduling panel and restores other dashboard panels.
+ * Removes highlight from the Scheduling Tool nav button.
+ */
+function deactivateSchedulingTool() {
+    // Hide scheduling panel
+    const schedulingPanel = document.getElementById("scheduling-panel");
+    if (schedulingPanel) schedulingPanel.classList.add("hidden");
+
+    // Restore other panels
+    const panelsToRestore = document.querySelectorAll(
+        '.search-panel, .summary-panel, .filter-panel, .checklist-panel, .issues-panel'
+    );
+    panelsToRestore.forEach(panel => panel.classList.remove("hidden"));
+
+    const gngSection = document.getElementById("gng-section");
+    if (gngSection) gngSection.classList.remove("hidden");
+
+    // Remove nav button highlight
+    const schedulingBtn = document.getElementById("scheduling-tool-btn");
+    if (schedulingBtn) schedulingBtn.classList.remove("active");
+}
+
+// =========================================
+// SCHEDULING TOOL — Data Hall Selector
+// =========================================
+
+/**
+ * Populate the Data Hall selector with unique values derived from state.equipment.
+ * - Derives DH labels using deriveSchedulingDataHall(), filters nulls, sorts alphanumerically
+ * - Updates schedulingState.dataHalls
+ * - Disables selector with message when no Data Hall values are available
+ * - Preserves current selection if still valid; otherwise clears it
+ * - Hides the table until a selection is made
+ * - Sets up change handler to filter equipment and trigger re-render
+ */
+function renderSchedulingDataHallSelector() {
+    const select = document.getElementById("scheduling-data-hall-select");
+    const table = document.getElementById("scheduling-table");
+    if (!select) return;
+
+    // Derive unique Data Hall values from equipment data
+    const dhSet = new Set();
+    (state.equipment || []).forEach(item => {
+        const dh = deriveSchedulingDataHall(item["Area"]);
+        if (dh) dhSet.add(dh);
+    });
+
+    // Sort alphanumerically and store in scheduling state
+    const dataHalls = Array.from(dhSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    schedulingState.dataHalls = dataHalls;
+
+    // Clear existing options (keep only the default prompt)
+    select.innerHTML = '';
+
+    if (dataHalls.length === 0) {
+        // No data halls available — disable selector with message
+        const disabledOption = document.createElement("option");
+        disabledOption.value = "";
+        disabledOption.textContent = "No Data Halls available";
+        select.appendChild(disabledOption);
+        select.disabled = true;
+        schedulingState.selectedDataHall = null;
+
+        // Hide table when no data halls
+        if (table) table.classList.add("hidden");
+        return;
+    }
+
+    // Enable selector and add default prompt option
+    select.disabled = false;
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "-- Select Data Hall --";
+    select.appendChild(defaultOption);
+
+    // Populate with available Data Hall values
+    dataHalls.forEach(dh => {
+        const option = document.createElement("option");
+        option.value = dh;
+        option.textContent = dh;
+        select.appendChild(option);
+    });
+
+    // Preserve current selection if still valid; otherwise clear it
+    if (schedulingState.selectedDataHall && dataHalls.includes(schedulingState.selectedDataHall)) {
+        select.value = schedulingState.selectedDataHall;
+    } else {
+        schedulingState.selectedDataHall = null;
+        select.value = "";
+    }
+
+    // Show/hide table based on current selection
+    if (table) {
+        if (schedulingState.selectedDataHall) {
+            table.classList.remove("hidden");
+        } else {
+            table.classList.add("hidden");
+        }
+    }
+
+    // Set up change handler (remove previous to avoid duplicates)
+    select.removeEventListener("change", handleSchedulingDataHallChange);
+    select.addEventListener("change", handleSchedulingDataHallChange);
+}
+
+/**
+ * Handle Data Hall selector change event.
+ * Updates schedulingState, shows/hides table, and triggers recalculation.
+ */
+function handleSchedulingDataHallChange(event) {
+    const value = event.target.value;
+    const table = document.getElementById("scheduling-table");
+
+    schedulingState.selectedDataHall = value || null;
+
+    if (table) {
+        if (schedulingState.selectedDataHall) {
+            table.classList.remove("hidden");
+        } else {
+            table.classList.add("hidden");
+        }
+    }
+
+    // Trigger computation and re-render if a Data Hall is selected
+    if (schedulingState.selectedDataHall) {
+        if (typeof computeSchedulingRows === "function") {
+            const filtered = (state.equipment || []).filter(item => {
+                const dh = deriveSchedulingDataHall(item["Area"]);
+                return dh === schedulingState.selectedDataHall;
+            });
+            schedulingState.computedRows = computeSchedulingRows(filtered, schedulingState.selectedSubChecklists);
+        }
+        if (typeof renderSchedulingTable === "function") {
+            renderSchedulingTable();
+        }
+    }
+}
+
+// =========================================
+// SCHEDULING TOOL — Phase & Sub-Checklist Selection
+// =========================================
+
+/**
+ * Render the scheduling phase selector and sub-checklist checkboxes.
+ *
+ * - Reads the current phase from #scheduling-phase-select (or schedulingState.selectedPhase)
+ * - Renders checkboxes for the corresponding sub-checklists into #scheduling-subchecklist-checkboxes
+ * - Defaults all sub-checklists to selected (checked) on first render or phase switch
+ * - Sets up a change handler on the phase selector to re-render on phase change
+ * - Discards previous phase selection state on switch
+ * - Triggers recalculation (computeSchedulingRows) when phase changes
+ */
+function renderSchedulingPhaseSelector() {
+    const phaseSelect = document.getElementById("scheduling-phase-select");
+    const checkboxContainer = document.getElementById("scheduling-subchecklist-checkboxes");
+    if (!phaseSelect || !checkboxContainer) return;
+
+    // Read current phase from the DOM select element
+    const currentPhase = phaseSelect.value || schedulingState.selectedPhase;
+
+    // Update state to reflect current phase
+    schedulingState.selectedPhase = currentPhase;
+
+    // Render sub-checklist checkboxes for the active phase
+    renderSubChecklistCheckboxes(currentPhase, checkboxContainer);
+
+    // Set up change handler on the phase select (remove previous to avoid duplicates)
+    phaseSelect.removeEventListener("change", handleSchedulingPhaseChange);
+    phaseSelect.addEventListener("change", handleSchedulingPhaseChange);
+}
+
+/**
+ * Render sub-checklist checkboxes for the given phase.
+ * All checkboxes default to checked. Updates schedulingState.selectedSubChecklists.
+ *
+ * @param {string} phase — "L2 Inspections" or "L2 Walks"
+ * @param {HTMLElement} container — the DOM element to render checkboxes into
+ */
+function renderSubChecklistCheckboxes(phase, container) {
+    const subChecklists = SCHEDULING_PHASE_MAP[phase] || [];
+
+    // Clear existing checkboxes
+    container.innerHTML = "";
+
+    // Default all sub-checklists to selected
+    schedulingState.selectedSubChecklists = [...subChecklists];
+
+    // Create a checkbox for each sub-checklist
+    subChecklists.forEach(subChecklist => {
+        const label = document.createElement("label");
+        label.className = "scheduling-subchecklist-label";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = subChecklist;
+        checkbox.checked = true;
+        checkbox.className = "scheduling-subchecklist-checkbox";
+
+        // Handle individual checkbox toggle
+        checkbox.addEventListener("change", function () {
+            handleSubChecklistToggle(subChecklist, this.checked);
+        });
+
+        const span = document.createElement("span");
+        span.textContent = subChecklist;
+
+        label.appendChild(checkbox);
+        label.appendChild(span);
+        container.appendChild(label);
+    });
+}
+
+/**
+ * Handle phase selector change event.
+ * Updates state, re-renders sub-checklist checkboxes (all checked by default),
+ * discards previous phase selection state, and triggers recalculation.
+ */
+function handleSchedulingPhaseChange(event) {
+    const newPhase = event.target.value;
+    const checkboxContainer = document.getElementById("scheduling-subchecklist-checkboxes");
+
+    // Update state — discard previous phase's selection
+    schedulingState.selectedPhase = newPhase;
+
+    // Re-render checkboxes for the new phase (all defaulted to selected)
+    if (checkboxContainer) {
+        renderSubChecklistCheckboxes(newPhase, checkboxContainer);
+    }
+
+    // Trigger recalculation if a Data Hall is selected
+    if (schedulingState.selectedDataHall) {
+        if (typeof computeSchedulingRows === "function") {
+            const filtered = (state.equipment || []).filter(item => {
+                const dh = deriveSchedulingDataHall(item["Area"]);
+                return dh === schedulingState.selectedDataHall;
+            });
+            schedulingState.computedRows = computeSchedulingRows(filtered, schedulingState.selectedSubChecklists);
+        }
+        if (typeof renderSchedulingTable === "function") {
+            renderSchedulingTable();
+        }
+    }
+}
+
+/**
+ * Handle individual sub-checklist checkbox toggle.
+ * Updates schedulingState.selectedSubChecklists and triggers recalculation.
+ *
+ * @param {string} subChecklist — the sub-checklist column name toggled
+ * @param {boolean} isChecked — whether the checkbox is now checked
+ */
+function handleSubChecklistToggle(subChecklist, isChecked) {
+    if (isChecked) {
+        // Add to selected if not already present
+        if (!schedulingState.selectedSubChecklists.includes(subChecklist)) {
+            schedulingState.selectedSubChecklists.push(subChecklist);
+        }
+    } else {
+        // Remove from selected
+        schedulingState.selectedSubChecklists = schedulingState.selectedSubChecklists.filter(
+            sc => sc !== subChecklist
+        );
+    }
+
+    // Trigger recalculation if a Data Hall is selected
+    if (schedulingState.selectedDataHall) {
+        if (typeof computeSchedulingRows === "function") {
+            const filtered = (state.equipment || []).filter(item => {
+                const dh = deriveSchedulingDataHall(item["Area"]);
+                return dh === schedulingState.selectedDataHall;
+            });
+            schedulingState.computedRows = computeSchedulingRows(filtered, schedulingState.selectedSubChecklists);
+        }
+        if (typeof renderSchedulingTable === "function") {
+            renderSchedulingTable();
+        }
+    }
+}
+
+// ─── Scheduling Tool: Computation Functions ────────────────────────────────────
+
+/**
+ * Compute completion metrics for a set of equipment records and selected sub-checklists.
+ *
+ * For each record, for each sub-checklist column:
+ *   - Value of 1 (or "1"): counts toward both `complete` and `total`
+ *   - Value of 0 (or "0"): counts toward `total` only (incomplete but applicable)
+ *   - Value of "-": skipped entirely (not applicable, excluded from total)
+ *
+ * @param {Object[]} records — equipment records matching a specific type + line-up
+ * @param {string[]} subChecklists — column names to evaluate
+ * @returns {{ complete: number, total: number, percent: number }}
+ */
+function computeCompletion(records, subChecklists) {
+    let complete = 0;
+    let total = 0;
+
+    for (const record of records) {
+        for (const col of subChecklists) {
+            const raw = record[col];
+
+            // Skip not-applicable entries
+            if (raw === "-") {
+                continue;
+            }
+
+            const num = Number(raw);
+
+            if (num === 1) {
+                complete++;
+                total++;
+            } else if (num === 0) {
+                total++;
+            }
+            // Any other value (NaN from non-numeric, or unexpected numbers) is ignored
+        }
+    }
+
+    const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
+
+    return { complete, total, percent };
+}
+
+/**
+ * Compute scheduling table rows from equipment data.
+ *
+ * Algorithm:
+ * 1. Filter out records with missing/empty "Equipment Type" field
+ * 2. Filter out records where deriveLineUp returns null
+ * 3. Group remaining records by Equipment Type → Line-Up
+ * 4. For each Equipment Type (in EQUIPMENT_TYPE_ORDER):
+ *    a. Skip if no records exist for this type
+ *    b. For each Line-Up (in LINE_UP_ORDER):
+ *       - Skip if no records for this type + line-up combo
+ *       - Call computeCompletion to get metrics
+ *       - Create a SchedulingRow with isTotalRow: false
+ *    c. Create a Total_Row by summing across all line-up rows, compute percent
+ *    d. Place Total_Row FIRST (above line-up rows) in the output for that group
+ * 5. Return the full array of rows
+ *
+ * @param {Object[]} equipment — filtered equipment records for selected data hall
+ * @param {string[]} selectedSubChecklists — column names to include in calculation
+ * @returns {SchedulingRow[]} — rows sorted by fixed Equipment Type then Line-Up order
+ */
+function computeSchedulingRows(equipment, selectedSubChecklists) {
+    const rows = [];
+    const currentPhase = schedulingState.selectedPhase;
+
+    // Step 1 & 2: Filter out records with missing/empty Equipment Type or non-derivable Line-Up
+    const validRecords = (equipment || []).filter(record => {
+        const eqType = record["Equipment Type"];
+        if (!eqType || (typeof eqType === "string" && eqType.trim() === "")) {
+            return false;
+        }
+        const lineUp = deriveLineUp(record["Equipment ID"]);
+        if (!lineUp) {
+            return false;
+        }
+        return true;
+    });
+
+    // Step 3: Group by Equipment Type → Line-Up
+    const groups = {};
+    for (const record of validRecords) {
+        const eqType = record["Equipment Type"];
+        const lineUp = deriveLineUp(record["Equipment ID"]);
+
+        if (!groups[eqType]) {
+            groups[eqType] = {};
+        }
+        if (!groups[eqType][lineUp]) {
+            groups[eqType][lineUp] = [];
+        }
+        groups[eqType][lineUp].push(record);
+    }
+
+    // Step 4: Iterate in fixed order
+    for (const eqType of EQUIPMENT_TYPE_ORDER) {
+        // 4a. Skip if no records exist for this type
+        if (!groups[eqType]) {
+            continue;
+        }
+
+        const lineUpRows = [];
+        let totalComplete = 0;
+        let totalTotal = 0;
+
+        // 4b. For each Line-Up in fixed order
+        for (const lineUp of LINE_UP_ORDER) {
+            if (!groups[eqType][lineUp] || groups[eqType][lineUp].length === 0) {
+                continue;
+            }
+
+            const metrics = computeCompletion(groups[eqType][lineUp], selectedSubChecklists);
+
+            lineUpRows.push({
+                equipmentType: eqType,
+                checklistPhase: currentPhase,
+                lineUp: lineUp,
+                checklistsComplete: metrics.complete,
+                totalChecklists: metrics.total,
+                percentComplete: metrics.percent,
+                isTotalRow: false
+            });
+
+            totalComplete += metrics.complete;
+            totalTotal += metrics.total;
+        }
+
+        // Skip this equipment type entirely if no line-up rows were generated
+        if (lineUpRows.length === 0) {
+            continue;
+        }
+
+        // 4c & 4d: Create Total_Row and place it FIRST
+        const totalPercent = totalTotal > 0 ? Math.round((totalComplete / totalTotal) * 100) : 0;
+
+        rows.push({
+            equipmentType: eqType,
+            checklistPhase: currentPhase,
+            lineUp: "-",
+            checklistsComplete: totalComplete,
+            totalChecklists: totalTotal,
+            percentComplete: totalPercent,
+            isTotalRow: true
+        });
+
+        // Add all line-up rows after the total row
+        for (const row of lineUpRows) {
+            rows.push(row);
+        }
+    }
+
+    return rows;
+}
+
+// =========================================
+// SCHEDULING TOOL — Table Rendering
+// =========================================
+
+/**
+ * Render the scheduling table from schedulingState.computedRows.
+ * Populates the thead with column headers and tbody with data rows.
+ * Total rows receive the "total-row" class for bold styling.
+ * The selected Checklist Phase name is displayed in every row's Checklist Phase column.
+ * Percent_Complete is displayed as a whole number followed by "%".
+ */
+function renderSchedulingTable() {
+    const thead = document.getElementById("scheduling-table-head");
+    const tbody = document.getElementById("scheduling-table-body");
+
+    if (!thead || !tbody) return;
+
+    // Render header row
+    thead.innerHTML = "";
+    const headerRow = document.createElement("tr");
+    const headers = ["Equipment Type", "Checklist Phase", "Line Up", "Checklists Complete", "Total Checklists", "% Complete"];
+    for (const headerText of headers) {
+        const th = document.createElement("th");
+        th.textContent = headerText;
+        headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+
+    // Clear and re-render tbody from computedRows
+    tbody.innerHTML = "";
+    const rows = schedulingState.computedRows || [];
+
+    for (const row of rows) {
+        const tr = document.createElement("tr");
+
+        // Add total-row class for bold text formatting on total rows
+        if (row.isTotalRow) {
+            tr.classList.add("total-row");
+        }
+
+        // Equipment Type cell
+        const tdEquipType = document.createElement("td");
+        tdEquipType.textContent = row.equipmentType;
+        tr.appendChild(tdEquipType);
+
+        // Checklist Phase cell — always shows the selected phase name
+        const tdPhase = document.createElement("td");
+        tdPhase.textContent = row.checklistPhase;
+        tr.appendChild(tdPhase);
+
+        // Line Up cell — "-" for total rows, letter for line-up rows
+        const tdLineUp = document.createElement("td");
+        tdLineUp.textContent = row.lineUp;
+        tr.appendChild(tdLineUp);
+
+        // Checklists Complete cell
+        const tdComplete = document.createElement("td");
+        tdComplete.textContent = row.checklistsComplete;
+        tr.appendChild(tdComplete);
+
+        // Total Checklists cell
+        const tdTotal = document.createElement("td");
+        tdTotal.textContent = row.totalChecklists;
+        tr.appendChild(tdTotal);
+
+        // % Complete cell — whole number followed by "%"
+        const tdPercent = document.createElement("td");
+        tdPercent.textContent = row.percentComplete + "%";
+        tr.appendChild(tdPercent);
+
+        tbody.appendChild(tr);
+    }
+}
+
+// =========================================
+// SCHEDULING TOOL — Panel Orchestration
+// =========================================
+
+/**
+ * Orchestration function for the Scheduling Tool panel.
+ * Coordinates rendering of Data Hall selector, Phase selector,
+ * Sub-Checklist toggles, and table.
+ *
+ * Handles:
+ * - No data loaded state: shows "No data available" message
+ * - No Data Hall selected: shows prompt to select a Data Hall
+ * - Data Hall selected: filters equipment, computes rows, renders table
+ *
+ * Called when:
+ * - Scheduling tool is first activated
+ * - After data reloads
+ * - Can be called from activateSchedulingTool() to initialize the panel
+ *
+ * Validates: Requirements 2.3, 2.5
+ */
+function renderSchedulingPanel() {
+    const panel = document.getElementById("scheduling-panel");
+    if (!panel) return;
+
+    const table = document.getElementById("scheduling-table");
+    const controlsContainer = panel.querySelector(".scheduling-controls");
+    const actionsContainer = panel.querySelector(".scheduling-actions");
+
+    // Remove any existing status message
+    const existingMessage = panel.querySelector(".scheduling-status-message");
+    if (existingMessage) existingMessage.remove();
+
+    // Check if equipment data is available
+    if (!state.equipment || state.equipment.length === 0) {
+        // No data loaded — show message, hide controls and table
+        if (controlsContainer) controlsContainer.classList.add("hidden");
+        if (table) table.classList.add("hidden");
+        if (actionsContainer) actionsContainer.classList.add("hidden");
+
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "scheduling-status-message";
+        messageDiv.textContent = "No data available";
+        // Insert message after the panel header
+        const panelHeader = panel.querySelector(".panel-header");
+        if (panelHeader && panelHeader.nextSibling) {
+            panel.insertBefore(messageDiv, panelHeader.nextSibling);
+        } else {
+            panel.appendChild(messageDiv);
+        }
+        return;
+    }
+
+    // Data is available — show controls
+    if (controlsContainer) controlsContainer.classList.remove("hidden");
+    if (actionsContainer) actionsContainer.classList.remove("hidden");
+
+    // Render the Data Hall selector (populates dropdown, updates schedulingState.dataHalls)
+    renderSchedulingDataHallSelector();
+
+    // Render the Phase selector and Sub-Checklist checkboxes
+    renderSchedulingPhaseSelector();
+
+    // Check if a Data Hall is selected
+    if (schedulingState.selectedDataHall) {
+        // Filter equipment by selected Data Hall
+        const filtered = (state.equipment || []).filter(item => {
+            const dh = deriveSchedulingDataHall(item["Area"]);
+            return dh === schedulingState.selectedDataHall;
+        });
+
+        // Compute rows from filtered equipment and selected sub-checklists
+        schedulingState.computedRows = computeSchedulingRows(filtered, schedulingState.selectedSubChecklists);
+
+        // Show table and render it
+        if (table) table.classList.remove("hidden");
+        renderSchedulingTable();
+    } else {
+        // No Data Hall selected — hide table, show prompt
+        if (table) table.classList.add("hidden");
+
+        const promptDiv = document.createElement("div");
+        promptDiv.className = "scheduling-status-message";
+        promptDiv.textContent = "Select a Data Hall to view scheduling data";
+        // Insert prompt after controls
+        if (controlsContainer && controlsContainer.nextSibling) {
+            panel.insertBefore(promptDiv, controlsContainer.nextSibling);
+        } else if (controlsContainer) {
+            panel.insertBefore(promptDiv, table ? table.parentElement : null);
+        } else {
+            panel.appendChild(promptDiv);
+        }
+    }
+}
+
+// =========================================
+// SCHEDULING TOOL — Export (TSV)
+// =========================================
+
+/**
+ * Build tab-separated string from current scheduling table state.
+ * Includes header row, total rows, and line-up rows in display order.
+ * Validates: Requirements 7.2, 7.3, 7.4
+ *
+ * @returns {string} — TSV string with header and data rows separated by newlines
+ */
+function buildSchedulingTSV() {
+    const header = "Equipment Type\tChecklist Phase\tLine Up\tChecklists Complete\tTotal Checklists\t% Complete";
+    const rows = schedulingState.computedRows || [];
+
+    const lines = [header];
+
+    for (const row of rows) {
+        const line = [
+            row.equipmentType,
+            row.checklistPhase,
+            row.lineUp,
+            row.checklistsComplete,
+            row.totalChecklists,
+            row.percentComplete + "%"
+        ].join("\t");
+        lines.push(line);
+    }
+
+    return lines.join("\n");
+}
+
+/**
+ * Copy the scheduling table to the clipboard as TSV text.
+ * Shows a success toast for 3 seconds on success, or an error toast on failure.
+ * Validates: Requirements 7.1, 7.2, 7.5, 7.6
+ */
+async function copySchedulingTable() {
+    const toast = document.getElementById("scheduling-toast");
+
+    try {
+        const tsv = buildSchedulingTSV();
+        await navigator.clipboard.writeText(tsv);
+
+        // Show success toast
+        toast.textContent = "Copied to clipboard!";
+        toast.classList.remove("hidden", "error");
+        toast.classList.add("success");
+    } catch (err) {
+        // Show error toast
+        toast.textContent = "Copy failed \u2014 please try again";
+        toast.classList.remove("hidden", "success");
+        toast.classList.add("error");
+    }
+
+    // Auto-hide toast after 3 seconds
+    setTimeout(() => {
+        toast.classList.add("hidden");
+        toast.classList.remove("success", "error");
+    }, 3000);
 }

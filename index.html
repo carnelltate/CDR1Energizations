@@ -90,6 +90,17 @@ Purpose: Static frontend shell for DC3 Construction Equipment Search
                 </button>
             </nav>
 
+            <!-- Scheduling Tool navigation -->
+            <nav class="scheduling-nav" aria-label="Scheduling Tool navigation">
+                <button
+                    id="scheduling-tool-btn"
+                    class="scheduling-nav-btn"
+                    type="button"
+                >
+                    Scheduling Tool
+                </button>
+            </nav>
+
             <div class="metadata-row">
 
                 <div class="metadata-item">
@@ -410,6 +421,101 @@ Supports:
             <div id="gng-content">
                 <!-- Dynamically rendered: controls, vendor summary, detail table -->
             </div>
+
+        </section>
+
+        <!-- =========================================
+             SCHEDULING TOOL PANEL
+        ========================================== -->
+        <section
+            id="scheduling-panel"
+            class="panel scheduling-panel hidden"
+        >
+
+            <div class="panel-header">
+                <h2>Scheduling Tool</h2>
+            </div>
+
+            <div class="scheduling-controls">
+
+                <!-- Data Hall Selector -->
+                <div class="scheduling-control-group">
+                    <label for="scheduling-data-hall-select">
+                        Data Hall
+                    </label>
+
+                    <select id="scheduling-data-hall-select">
+                        <option value="">-- Select Data Hall --</option>
+                    </select>
+                </div>
+
+                <!-- Phase Selector -->
+                <div class="scheduling-control-group">
+                    <label for="scheduling-phase-select">
+                        Checklist Phase
+                    </label>
+
+                    <select id="scheduling-phase-select">
+                        <option value="L2 Inspections">L2 Inspections</option>
+                        <option value="L2 Walks">L2 Walks</option>
+                    </select>
+                </div>
+
+                <!-- Sub-Checklist Checkboxes -->
+                <div class="scheduling-control-group">
+                    <fieldset id="scheduling-subchecklist-fieldset">
+                        <legend>Sub-Checklists</legend>
+
+                        <div
+                            id="scheduling-subchecklist-checkboxes"
+                            class="scheduling-subchecklist-checkboxes"
+                        >
+                            <!-- Dynamically rendered checkboxes -->
+                        </div>
+                    </fieldset>
+                </div>
+
+            </div>
+
+            <!-- Scheduling Table Container -->
+            <div class="table-scroll-container">
+
+                <table
+                    id="scheduling-table"
+                    class="data-table scheduling-table"
+                >
+
+                    <thead id="scheduling-table-head">
+                        <!-- Dynamically rendered -->
+                    </thead>
+
+                    <tbody id="scheduling-table-body">
+                        <!-- Dynamically rendered -->
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            <!-- Copy Table Button -->
+            <div class="scheduling-actions">
+
+                <button
+                    id="scheduling-copy-btn"
+                    class="secondary-btn"
+                    type="button"
+                >
+                    Copy Table
+                </button>
+
+            </div>
+
+            <!-- Toast message for copy confirmation/error -->
+            <div
+                id="scheduling-toast"
+                class="scheduling-toast hidden"
+                aria-live="polite"
+            ></div>
 
         </section>
 

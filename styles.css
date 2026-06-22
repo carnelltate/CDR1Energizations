@@ -1215,3 +1215,243 @@ tr:hover td.frozen-col-3 {
         width: 100%;
     }
 }
+
+
+/* =========================================
+   SCHEDULING TOOL
+========================================= */
+
+/* --- Navigation --- */
+
+.scheduling-nav {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.scheduling-nav-btn {
+    padding: 8px 24px;
+
+    border: 2px solid var(--border);
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+
+    background: #f3f4f6;
+    color: var(--muted-text);
+
+    font-size: 14px;
+    font-weight: 700;
+
+    cursor: pointer;
+
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.scheduling-nav-btn:hover {
+    background: #e5e7eb;
+    color: var(--text);
+}
+
+.scheduling-nav-btn.active {
+    background: var(--panel-bg);
+    color: var(--primary);
+    border-color: var(--primary);
+    border-bottom: 2px solid var(--panel-bg);
+    margin-bottom: -2px;
+    z-index: 1;
+}
+
+/* --- Panel Section --- */
+
+.scheduling-panel {
+    margin-top: 0;
+}
+
+/* --- Controls --- */
+
+.scheduling-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+
+    padding: 16px 20px;
+
+    border-bottom: 1px solid var(--border);
+}
+
+.scheduling-control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    min-width: 180px;
+}
+
+.scheduling-control-group label,
+.scheduling-control-group legend {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.scheduling-control-group fieldset {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.scheduling-control-group select {
+    height: 42px;
+
+    padding: 0 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 14px;
+
+    background: white;
+
+    max-width: 260px;
+}
+
+/* --- Sub-Checklist Checkboxes --- */
+
+.scheduling-subchecklist-checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+
+    padding-top: 4px;
+}
+
+.scheduling-subchecklist-checkboxes label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    cursor: pointer;
+
+    user-select: none;
+}
+
+.scheduling-subchecklist-checkboxes input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+
+    margin: 0;
+
+    cursor: pointer;
+
+    accent-color: var(--primary);
+}
+
+/* --- Scheduling Table --- */
+
+.scheduling-table {
+    margin-top: 0;
+}
+
+.scheduling-table th {
+    background: #f9fafb;
+
+    border-bottom: 2px solid var(--border);
+
+    padding: 12px 14px;
+
+    text-align: center;
+    white-space: nowrap;
+
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.scheduling-table td {
+    padding: 10px 14px;
+
+    text-align: center;
+    white-space: nowrap;
+
+    font-size: 13px;
+}
+
+.scheduling-table tbody tr:hover {
+    background: #fafcff;
+}
+
+/* Total rows — bold text formatting (Req 6.7) */
+.scheduling-table tr.total-row {
+    font-weight: 700;
+    background: #f0f4ff;
+}
+
+.scheduling-table tr.total-row td {
+    border-top: 2px solid var(--border);
+    font-weight: 700;
+}
+
+/* --- Actions (Copy Table Button) --- */
+
+.scheduling-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    padding: 14px 20px;
+
+    border-top: 1px solid var(--border);
+}
+
+/* --- Toast Messages (Req 7.5, 7.6) --- */
+
+.scheduling-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+
+    padding: 12px 24px;
+
+    border-radius: 8px;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+    z-index: 1000;
+
+    transition: opacity 0.3s ease;
+}
+
+.scheduling-toast.success {
+    background: #166534;
+    color: white;
+}
+
+.scheduling-toast.error {
+    background: #991b1b;
+    color: white;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 768px) {
+    .scheduling-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .scheduling-control-group {
+        min-width: 100%;
+    }
+
+    .scheduling-control-group select {
+        max-width: 100%;
+    }
+}
