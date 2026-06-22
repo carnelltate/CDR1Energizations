@@ -1281,16 +1281,275 @@ let gngAllChecklists = [];
 let gngCurrentRows = [];
 let gngCurrentDHLabel = "All";
 let gngSelectedTypes = [];
+let gngTypeDropdown = null;
+let gngPhaseDropdown = null;
 
+// =========================================
+// GNG READINESS REPORT — Checkbox Dropdown Component
+// =========================================
 
+/**
+ * Factory function that creates a Checkbox Dropdown component.
+ * Produces a reusable multi-select dropdown with checkboxes, trigger text summary,
+ * and Clear All functionality.
+ *
+ * @param {Object} config
+ * @param {string} config.id - Unique identifier prefix for DOM elements
+ * @param {string} config.label - Label text displayed above the trigger
+ * @param {string} config.placeholder - Text shown when no items selected
+ * @param {string[]} config.options - Array of option values to display as checkboxes
+ * @param {(selected: string[]) => void} config.onChange - Callback invoked on every selection change
+ * @returns {{ element: HTMLElement, getSelected: () => string[], setOptions: (options: string[]) => void, reset: () => void }}
+ */
+function createCheckboxDropdown(config) {
+    const { id, label, placeholder, options, onChange } = config;
+
+    // Internal state
+    let selectedValues = new Set();
+    let isOpen = false;
+    let focusedIndex = -1;
+
+    // --- Build DOM structure ---
+
+    // Wrapper
+    const wrapper = document.createElement("div");
+    wrapper.className = "filter-field checkbox-dropdown";
+    wrapper.id = `${id}-wrapper`;
+
+    // Label
+    const labelEl = document.createElement("label");
+    labelEl.setAttribute("for", `${id}-trigger`);
+    labelEl.textContent = label;
+    wrapper.appendChild(labelEl);
+
+    // Trigger button
+    const trigger = document.createElement("button");
+    trigger.className = "checkbox-dropdown-trigger";
+    trigger.id = `${id}-trigger`;
+    trigger.setAttribute("role", "combobox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-controls", `${id}-panel`);
+    trigger.setAttribute("type", "button");
+    trigger.textContent = placeholder;
+    wrapper.appendChild(trigger);
+
+    // Panel
+    const panel = document.createElement("div");
+    panel.className = "checkbox-dropdown-panel";
+    panel.id = `${id}-panel`;
+    panel.setAttribute("role", "listbox");
+    panel.setAttribute("aria-multiselectable", "true");
+    panel.hidden = true;
+    wrapper.appendChild(panel);
+
+    // --- Helper functions ---
+
+    function updateTriggerText() {
+        const count = selectedValues.size;
+        if (count === 0) {
+            trigger.textContent = placeholder;
+        } else if (count <= 2) {
+            trigger.textContent = Array.from(selectedValues).join(", ");
+        } else {
+            trigger.textContent = `${count} selected`;
+        }
+    }
+
+    function openPanel() {
+        isOpen = true;
+        panel.hidden = false;
+        trigger.setAttribute("aria-expanded", "true");
+        panel.focus();
+    }
+
+    function closePanel() {
+        isOpen = false;
+        panel.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+        focusedIndex = -1;
+        // Remove focused class from all options
+        const optionDivs = panel.querySelectorAll('.checkbox-dropdown-option');
+        optionDivs.forEach(div => div.classList.remove('checkbox-dropdown-option-focused'));
+    }
+
+    function setFocusedOption(index) {
+        const optionDivs = panel.querySelectorAll('.checkbox-dropdown-option');
+        if (optionDivs.length === 0) return;
+        // Remove previous focus
+        optionDivs.forEach(div => div.classList.remove('checkbox-dropdown-option-focused'));
+        // Clamp index
+        if (index < 0) index = 0;
+        if (index >= optionDivs.length) index = optionDivs.length - 1;
+        focusedIndex = index;
+        optionDivs[focusedIndex].classList.add('checkbox-dropdown-option-focused');
+        optionDivs[focusedIndex].scrollIntoView({ block: "nearest" });
+    }
+
+    function buildOptions(optionsList) {
+        // Clear existing options (preserve Clear All button will be re-added)
+        panel.innerHTML = "";
+
+        optionsList.forEach((value, index) => {
+            const optionDiv = document.createElement("div");
+            optionDiv.className = "checkbox-dropdown-option";
+            optionDiv.setAttribute("role", "option");
+            optionDiv.setAttribute("aria-selected", "false");
+            optionDiv.setAttribute("tabindex", "-1");
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = `${id}-opt-${index}`;
+            checkbox.value = value;
+            checkbox.setAttribute("tabindex", "-1");
+
+            const checkboxLabel = document.createElement("label");
+            checkboxLabel.setAttribute("for", `${id}-opt-${index}`);
+            checkboxLabel.textContent = value;
+
+            optionDiv.appendChild(checkbox);
+            optionDiv.appendChild(checkboxLabel);
+
+            // Checkbox change handler
+            checkbox.addEventListener("change", function () {
+                if (checkbox.checked) {
+                    selectedValues.add(value);
+                } else {
+                    selectedValues.delete(value);
+                }
+                optionDiv.setAttribute("aria-selected", checkbox.checked ? "true" : "false");
+                updateTriggerText();
+                onChange(Array.from(selectedValues));
+            });
+
+            panel.appendChild(optionDiv);
+        });
+
+        // Clear All button
+        const clearBtn = document.createElement("button");
+        clearBtn.className = "checkbox-dropdown-clear";
+        clearBtn.setAttribute("type", "button");
+        clearBtn.textContent = "Clear All";
+        clearBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            clearAll();
+            onChange(Array.from(selectedValues));
+        });
+        panel.appendChild(clearBtn);
+    }
+
+    function clearAll() {
+        selectedValues.clear();
+        const checkboxes = panel.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(cb => { cb.checked = false; });
+        const optionDivs = panel.querySelectorAll('.checkbox-dropdown-option');
+        optionDivs.forEach(div => { div.setAttribute("aria-selected", "false"); });
+        updateTriggerText();
+    }
+
+    // --- Event listeners ---
+
+    // Toggle panel on trigger click
+    trigger.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (isOpen) {
+            closePanel();
+        } else {
+            openPanel();
+        }
+    });
+
+    // Close panel on click outside
+    document.addEventListener("click", function (e) {
+        if (isOpen && !wrapper.contains(e.target)) {
+            closePanel();
+        }
+    });
+
+    // Keyboard: Enter/Space on trigger opens panel
+    trigger.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (!isOpen) {
+                openPanel();
+                setFocusedOption(0);
+            } else {
+                closePanel();
+            }
+        } else if (e.key === "ArrowDown" && !isOpen) {
+            e.preventDefault();
+            openPanel();
+            setFocusedOption(0);
+        }
+    });
+
+    // Keyboard: Arrow navigation, Space toggle, Escape close within panel
+    panel.addEventListener("keydown", function (e) {
+        const optionDivs = panel.querySelectorAll('.checkbox-dropdown-option');
+        const optionCount = optionDivs.length;
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (focusedIndex < optionCount - 1) {
+                setFocusedOption(focusedIndex + 1);
+            }
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (focusedIndex > 0) {
+                setFocusedOption(focusedIndex - 1);
+            }
+        } else if (e.key === " ") {
+            e.preventDefault();
+            if (focusedIndex >= 0 && focusedIndex < optionCount) {
+                const checkbox = optionDivs[focusedIndex].querySelector('input[type="checkbox"]');
+                if (checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event("change"));
+                }
+            }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closePanel();
+            trigger.focus();
+        }
+    });
+
+    // Make panel focusable so it can receive keydown events when open
+    panel.setAttribute("tabindex", "-1");
+
+    // --- Initialize options ---
+    buildOptions(options);
+
+    // --- Public API ---
+
+    return {
+        element: wrapper,
+
+        getSelected: function () {
+            return Array.from(selectedValues);
+        },
+
+        setOptions: function (newOptions) {
+            selectedValues.clear();
+            buildOptions(newOptions);
+            updateTriggerText();
+        },
+
+        reset: function () {
+            clearAll();
+        }
+    };
+}
 
 /**
  * Render the inline GNG Readiness section:
  * - DH selector dropdown with "All" as first and default-selected option
- * - Equipment Type multi-select filter
+ * - Equipment Type Checkbox Dropdown filter
+ * - Phase Checkbox Dropdown filter
  * - Vendor Summary container
  * - Detail Report container
- * Wires event listeners for DH selector change and type filter change.
+ * Wires event listeners for DH selector change.
+ * Creates Checkbox Dropdown instances for Equipment Type and Phase filters.
  * Calls applyGNGFilters() for the initial render.
  */
 function renderGNGSection() {
@@ -1314,17 +1573,13 @@ function renderGNGSection() {
     // Build equipment type options (sorted distinct types)
     const equipmentTypes = buildEquipmentTypeOptions(openChecklists);
 
-    // Render controls: DH selector with "All" first, then Equipment Type multi-select
+    // Render controls: DH selector with "All" first
     const dhOptionsHtml = [
         '<option value="All" selected>All</option>',
         ...dhLabels.map(label =>
             `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`
         )
     ].join("");
-
-    const typeOptionsHtml = equipmentTypes.map(type =>
-        `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`
-    ).join("");
 
     content.innerHTML = `
         <div class="gng-controls gng-filter-row">
@@ -1334,17 +1589,34 @@ function renderGNGSection() {
                     ${dhOptionsHtml}
                 </select>
             </div>
-            <div class="filter-field">
-                <label for="gng-type-filter">Equipment Type</label>
-                <select id="gng-type-filter" multiple>
-                    ${typeOptionsHtml}
-                </select>
-                <span id="gng-type-filter-count" class="filter-count-label"></span>
-            </div>
+            <div id="gng-type-dropdown-slot"></div>
+            <div id="gng-phase-dropdown-slot"></div>
         </div>
         <div id="gng-vendor-summary"></div>
         <div id="gng-detail-report"></div>
     `;
+
+    // Create Equipment Type Checkbox Dropdown
+    gngTypeDropdown = createCheckboxDropdown({
+        id: 'gng-type',
+        label: 'Equipment Type',
+        placeholder: 'All Types',
+        options: equipmentTypes,
+        onChange: applyGNGFilters
+    });
+
+    // Create Phase Checkbox Dropdown
+    gngPhaseDropdown = createCheckboxDropdown({
+        id: 'gng-phase',
+        label: 'Phase',
+        placeholder: 'All Phases',
+        options: buildPhaseOptions(openChecklists),
+        onChange: applyGNGFilters
+    });
+
+    // Insert dropdown elements into slots
+    document.getElementById("gng-type-dropdown-slot").appendChild(gngTypeDropdown.element);
+    document.getElementById("gng-phase-dropdown-slot").appendChild(gngPhaseDropdown.element);
 
     // Store references for filter logic
     gngDHMap = dhMap;
@@ -1352,24 +1624,22 @@ function renderGNGSection() {
 
     // Wire event handlers
     document.getElementById("gng-dh-select").addEventListener("change", applyGNGFilters);
-    document.getElementById("gng-type-filter").addEventListener("change", handleTypeFilterChange);
 
-    // Initial render with "All" and no type filter
+    // Initial render with "All" and no type/phase filter
     applyGNGFilters();
 }
 
 /**
- * Apply combined DH + Equipment Type filters and re-render GNG tables.
- * Reads DH selector and type multi-select values, filters data accordingly,
- * stores filtered state, and renders both vendor summary and detail tables.
+ * Apply combined DH + Equipment Type + Phase filters and re-render GNG tables.
+ * Reads DH selector value and gets selections from checkbox dropdown instances,
+ * filters data accordingly, stores filtered state, and renders both vendor summary
+ * and detail tables.
  */
 function applyGNGFilters() {
     const dhSelect = document.getElementById("gng-dh-select");
-    const typeFilter = document.getElementById("gng-type-filter");
-    if (!dhSelect || !typeFilter) return;
+    if (!dhSelect) return;
 
     const selectedDH = dhSelect.value;
-    const selectedTypes = Array.from(typeFilter.selectedOptions).map(o => o.value);
 
     // Step 1: Filter by data hall
     let rows;
@@ -1380,38 +1650,35 @@ function applyGNGFilters() {
     }
 
     // Step 2: Filter by equipment type (empty selection = all types)
+    const selectedTypes = gngTypeDropdown ? gngTypeDropdown.getSelected() : [];
     if (selectedTypes.length > 0) {
         rows = rows.filter(eq => selectedTypes.includes(eq.equipment_type));
     }
 
+    // Step 3: Filter by phase (empty selection = all phases)
+    const selectedPhases = gngPhaseDropdown ? gngPhaseDropdown.getSelected() : [];
+    if (selectedPhases.length > 0) {
+        rows = rows.filter(eq =>
+            (eq.open_items || []).some(item => selectedPhases.includes(item.phase || ""))
+        );
+    }
+
+    // Step 4: For rendering/export, filter open_items within each row when phase filter active
+    const displayRows = selectedPhases.length > 0
+        ? rows.map(eq => ({
+            ...eq,
+            open_items: (eq.open_items || []).filter(item => selectedPhases.includes(item.phase || ""))
+        }))
+        : rows;
+
     // Store current filtered state for export
-    gngCurrentRows = rows;
+    gngCurrentRows = displayRows;
     gngCurrentDHLabel = selectedDH;
     gngSelectedTypes = selectedTypes;
 
     // Render tables with filtered data
-    renderVendorSummaryTable(rows, selectedDH, selectedTypes);
-    renderDetailTable(rows, selectedDH);
-}
-
-/**
- * Handle equipment type multi-select change:
- * Updates the count label and triggers filter application.
- */
-function handleTypeFilterChange() {
-    const typeFilter = document.getElementById("gng-type-filter");
-    const countLabel = document.getElementById("gng-type-filter-count");
-    if (!typeFilter || !countLabel) return;
-
-    const selectedCount = typeFilter.selectedOptions.length;
-
-    if (selectedCount === 0) {
-        countLabel.textContent = "";
-    } else {
-        countLabel.textContent = `${selectedCount} selected`;
-    }
-
-    applyGNGFilters();
+    renderVendorSummaryTable(displayRows, selectedDH, selectedTypes);
+    renderDetailTable(displayRows, selectedDH);
 }
 
 // =========================================
@@ -1464,6 +1731,32 @@ function buildEquipmentTypeOptions(openChecklists) {
 }
 
 /**
+ * Extract distinct phase values from all open_items across all equipment records.
+ * Returns sorted array (case-insensitive ascending).
+ *
+ * @param {Array} openChecklists - Array of equipment objects with open_items
+ * @returns {string[]} Sorted distinct phase values
+ */
+function buildPhaseOptions(openChecklists) {
+    const phaseSet = new Set();
+    if (!Array.isArray(openChecklists)) {
+        return [];
+    }
+    for (const eq of openChecklists) {
+        const items = Array.isArray(eq.open_items) ? eq.open_items : [];
+        for (const item of items) {
+            const phase = item.phase !== undefined && item.phase !== null ? String(item.phase) : "";
+            if (phase !== "") {
+                phaseSet.add(phase);
+            }
+        }
+    }
+    return [...phaseSet].sort((a, b) =>
+        a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+}
+
+/**
  * Build the Vendor Summary cross-tab from filtered equipment rows.
  * Iterates all eq.open_items to populate vendorSet, typeSet, and counts[vendor][type].
  * Sorts vendors and types case-insensitively.
@@ -1477,7 +1770,7 @@ function buildVendorSummary(rows) {
     for (const eq of rows) {
         const type = eq.equipment_type || "Unknown";
         typeSet.add(type);
-        for (const item of eq.open_items) {
+        for (const item of (eq.open_items || [])) {
             const vendor = item.vendor || "Unassigned";
             vendorSet.add(vendor);
             if (!counts[vendor]) counts[vendor] = {};
@@ -1626,7 +1919,7 @@ function buildDetailReport(rows) {
  * Paired columns: Missing Checklist #1 / Assignee #1 ... Missing Checklist #N / Assignee #N
  * Rows with fewer than N open items get empty <td> cells for the remaining pairs.
  *
- * When rows is empty, renders "No open checklists for this data hall."
+ * When rows is empty, renders "No equipment with open checklists for this selection."
  *
  * @param {Array} rows - Array of equipment objects for the selected data hall
  * @param {string} dhLabel - The selected data hall label (e.g., "DH115")
@@ -1637,7 +1930,7 @@ function renderDetailTable(rows, dhLabel) {
 
     // Handle empty case
     if (!rows || rows.length === 0) {
-        container.innerHTML = '<p>No open checklists for this data hall.</p>';
+        container.innerHTML = '<p>No equipment with open checklists for this selection.</p>';
         return;
     }
 
@@ -1673,7 +1966,7 @@ function renderDetailTable(rows, dhLabel) {
         for (let i = 0; i < maxN; i++) {
             if (i < openItems.length) {
                 cells += `<td>${escapeHtml(openItems[i].phase || "")}</td>`;
-                cells += `<td>${escapeHtml(openItems[i].vendor || "")}</td>`;
+                cells += `<td>${escapeHtml(openItems[i].vendor || "Unassigned")}</td>`;
             } else {
                 cells += '<td></td><td></td>';
             }
@@ -1865,7 +2158,7 @@ function getGNGTableData(type) {
             ];
             for (let i = 0; i < maxN; i++) {
                 if (i < openItems.length) {
-                    row.push(openItems[i].phase || "", openItems[i].vendor || "");
+                    row.push(openItems[i].phase || "", openItems[i].vendor || "Unassigned");
                 } else {
                     row.push("", "");
                 }
